@@ -617,7 +617,8 @@ def rotate_slope_180(array):
     return new_array
 
 def shift_array(array, num_permutations):
-    new_array = [array[1], array[2], array[3], array[0]]
+    #new_array = [array[1], array[2], array[3], array[0]]
+    new_array = [array[3], array[0], array[1], array[2]]
     if (num_permutations == 0):
         print("Error: invalid permutation")
         sys.exit(-1)
@@ -739,7 +740,7 @@ def rotate_slope(block_data, rotation_angle):
             new_slope_array = rotate_slope_270(slope_array)
         
         new_slope_type = new_slope_array[idx]
-        
+
     elif (57 <= slope_type <= 60):
         pass
     
@@ -873,9 +874,13 @@ def rotate_gmp_blocks(output_path, chunk_infos, rotation_angle, block_info_array
     rotate_map(output_path, chunk_infos, rotation_angle, block_info_array)  # Now rotate the map itself
     return
 
+# TODO
+def rotate_gmp_zones(output_path, chunk_infos, rotation_angle):
+    return
 
-
-
+# TODO
+def rotate_gmp_lights(output_path, chunk_infos, rotation_angle):
+    return
 
 
 def rotate_gmp(gmp_path, chunk_infos, rotation_angle):
@@ -903,6 +908,8 @@ def rotate_gmp(gmp_path, chunk_infos, rotation_angle):
         return
     
     rotate_gmp_blocks(output_path, chunk_infos, rotation_angle, block_info_array)
+    rotate_gmp_zones(output_path, chunk_infos, rotation_angle)
+    rotate_gmp_lights(output_path, chunk_infos, rotation_angle)
 
 
 
