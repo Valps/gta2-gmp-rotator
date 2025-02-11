@@ -14,6 +14,11 @@ MAP_HEIGHT = 255
 
 BLOCK_INFO_SIZE = 12
 
+AIR_TYPE = 0
+ROAD_TYPE = 1
+PAVEMENT_TYPE = 2
+FIELD_TYPE = 3
+
 class gmp_map_light:
     def __init__(self, argb: int, x: int, y: int, z: int, radius: int, intensity: int, shape: int, on_time: int, off_time: int):
         self.argb = argb                # s32
@@ -443,7 +448,7 @@ def get_block_info_data(gmp_path, chunk_infos):
 def is_air_block(block_data):
     block_type_byte = block_data[-1]
     type = block_type_byte % 4
-    if (type == 0):
+    if (type == AIR_TYPE):
         return True
     return False
 
@@ -451,9 +456,37 @@ def is_empty_block(block_data):
     if (is_air_block(block_data)):
         lid_word = int.from_bytes(block_data[8:10], 'little')
         lid_tile = lid_word % 1024
-        if (lid_tile == 0):
-            return True
+        if (lid_tile == 0): # TODO: air blocks with non-null sides
+            left_word = int.from_bytes(block_data[0:2], 'little')
+            right_word = int.from_bytes(block_data[2:4], 'little')
+            top_word = int.from_bytes(block_data[4:6], 'little')
+            bottom_word = int.from_bytes(block_data[6:8], 'little')
+            if (left_word == 0 and right_word == 0 and top_word == 0 and bottom_word == 0):
+                return True
     return False
+
+def is_road_field_block(block_data):
+    block_type_byte = block_data[-1]
+    type = block_type_byte % 4
+    if (type == ROAD_TYPE or type == FIELD_TYPE):
+        return True
+    return False
+
+def block_has_lid(block_data):
+    lid_word = int.from_bytes(block_data[8:10], 'little')
+    lid_tile = lid_word % 1024
+    if (lid_tile != 0):
+        return True
+    return False
+
+def is_slope(block_data):
+    slope_byte = block_data[-1]
+    slope_byte = slope_byte >> 2
+    if (slope_byte == 0):
+        return False
+    if (slope_byte > 60):   # slopes 61, 62 and 63 are irrelevants for gmp rotation
+        return False
+    return True
 
 ################ rotate stuff
 
@@ -512,27 +545,215 @@ def rotate_road_arrows(block_data, rotation_angle):
     return new_block_data
 
 def rotate_lid(block_data, rotation_angle):
-    #print(block_data[8:10])
-    
     lid_word = int.from_bytes(block_data[8:10], 'little')
-    #read_lid_info(lid_word)
 
     old_rotation = lid_word >> 14
     new_rotation = convert_binary_rot(old_rotation, rotation_angle)
 
-    #print(f"Old rotation = {old_rotation}, New rotation = {new_rotation}")
-
-    #print("Old word: {:b}".format(lid_word))
+    # fix flipped blocks for 270° and 90° rotations
+    if (rotation_angle == 270):
+        flip = ( lid_word >> 13 ) % 2
+        if (flip == 1):
+            new_rotation = convert_binary_rot(old_rotation, 90)
+    elif (rotation_angle == 90):
+        flip = ( lid_word >> 13 ) % 2
+        if (flip == 1):
+            new_rotation = convert_binary_rot(old_rotation, 270)
 
     sum_bits = new_rotation * (2**14)   # shift left by 14
     lid_word = lid_word & 16383 #(int(str(0x3FFF), 16))    # clear the last two bits
     lid_word += sum_bits
 
-    #print("New word: {:b}".format(lid_word))
-    #print(lid_word)
     new_byte_array = bytes([lid_word % 256, lid_word // 256])
     new_block_data = block_data[:8] + new_byte_array + block_data[10:]     # int.to_bytes(new_byte_array, byteorder='little')
     return new_block_data
+
+def rotate_sides(block_data, rotation_angle):
+    left_word = int.from_bytes(block_data[0:2], 'little')
+    right_word = int.from_bytes(block_data[2:4], 'little')
+    top_word = int.from_bytes(block_data[4:6], 'little')
+    bottom_word = int.from_bytes(block_data[6:8], 'little')
+
+    #array = [left_word, right_word, top_word, bottom_word]
+    array = []
+
+    if (rotation_angle == 90):
+        array = [bottom_word, top_word, left_word, right_word]
+    elif (rotation_angle == 180):
+        array = [right_word, left_word, bottom_word, top_word]
+    elif (rotation_angle == 270):
+        array = [top_word, bottom_word, right_word, left_word]
+
+    if (array == None):
+        print(f"Error: wrong rotation angle: {rotation_angle}")
+        sys.exit(-1)
+
+    new_byte_array = bytes([array[0] % 256, 
+                            array[0] // 256,
+                            array[1] % 256, 
+                            array[1] // 256,
+                            array[2] % 256, 
+                            array[2] // 256,
+                            array[3] % 256, 
+                            array[3] // 256])
+    
+    new_block_data = new_byte_array + block_data[8:]
+
+    return new_block_data
+
+def rotate_slope_90(array):
+    #array = [a, b, c, d]
+    new_array = [array[3], array[2], array[0], array[1]]
+    return new_array
+
+def rotate_slope_270(array):
+    #array = [a, b, c, d]
+    new_array = [array[2], array[3], array[1], array[0]]
+    return new_array
+
+def rotate_slope_180(array):
+    #array = [a, b, c, d]
+    new_array = [array[1], array[0], array[3], array[2]]
+    return new_array
+
+def shift_array(array, num_permutations):
+    new_array = [array[1], array[2], array[3], array[0]]
+    if (num_permutations == 0):
+        print("Error: invalid permutation")
+        sys.exit(-1)
+    if (num_permutations == 1):
+        return new_array
+    else:
+        return shift_array(new_array, num_permutations - 1)
+
+def rotate_slope(block_data, rotation_angle):
+    byte = block_data[-1]
+    slope_type = byte >> 2
+
+    new_block_data = block_data # TODO: remove this
+
+    new_slope_type = None
+
+    if (1 <= slope_type <= 8):
+        if (slope_type % 2 == 1):   # lower
+            
+            slope_array = [1, 3, 5, 7]
+            idx = slope_array.index(slope_type)
+
+            if (rotation_angle == 90):
+                new_slope_array = rotate_slope_90(slope_array)
+            elif (rotation_angle == 180):
+                new_slope_array = rotate_slope_180(slope_array)
+            elif (rotation_angle == 270):
+                new_slope_array = rotate_slope_270(slope_array)
+            
+            new_slope_type = new_slope_array[idx]
+            
+        else:                       # higher
+
+            slope_array = [2, 4, 6, 8]
+            idx = slope_array.index(slope_type)
+
+            if (rotation_angle == 90):
+                new_slope_array = rotate_slope_90(slope_array)
+            elif (rotation_angle == 180):
+                new_slope_array = rotate_slope_180(slope_array)
+            elif (rotation_angle == 270):
+                new_slope_array = rotate_slope_270(slope_array)
+            
+            new_slope_type = new_slope_array[idx]
+
+    elif (9 <= slope_type <= 40):
+
+        if (9 <= slope_type <= 16):
+            offset = slope_type - 9
+            direction = 1    # up
+        elif (17 <= slope_type <= 24):
+            offset = slope_type - 17
+            direction = 3  # down
+        elif (25 <= slope_type <= 32):
+            offset = slope_type - 25
+            direction = 2  # left
+        elif (33 <= slope_type <= 40):
+            offset = slope_type - 33
+            direction = 0 # right
+
+        array = [0,1,2,3]
+        idx = array.index(direction)
+
+        new_array = shift_array(array, ROTATION_ANGLES.index(rotation_angle))
+        new_direction = new_array[idx]
+
+        #print(f"Direction: {direction}, New direction: {new_direction}")
+
+        if (new_direction == 0):
+            new_slope_type = 33 + offset
+        elif (new_direction == 1):
+            new_slope_type = 9 + offset
+        elif (new_direction == 2):
+            new_slope_type = 25 + offset
+        elif (new_direction == 3):
+            new_slope_type = 17 + offset
+
+
+    elif (41 <= slope_type <= 44):
+
+        slope_array = [41, 42, 43, 44]
+        idx = slope_array.index(slope_type)
+
+        if (rotation_angle == 90):
+            new_slope_array = rotate_slope_90(slope_array)
+        elif (rotation_angle == 180):
+            new_slope_array = rotate_slope_180(slope_array)
+        elif (rotation_angle == 270):
+            new_slope_array = rotate_slope_270(slope_array)
+        
+        new_slope_type = new_slope_array[idx]
+
+    elif (45 <= slope_type <= 48):
+        pass
+    elif (49 <= slope_type <= 52):  # TODO:  fix tile sides
+        
+        slope_array = [49, 52, 51, 50]
+        idx = slope_array.index(slope_type)
+        pass
+        if (rotation_angle == 90):
+            new_slope_array = rotate_slope_90(slope_array)
+        elif (rotation_angle == 180):
+            new_slope_array = rotate_slope_180(slope_array)
+        elif (rotation_angle == 270):
+            new_slope_array = rotate_slope_270(slope_array)
+        
+        new_slope_type = new_slope_array[idx]
+
+    elif (53 <= slope_type <= 56):
+
+        slope_array = [53, 54, 55, 56]
+        idx = slope_array.index(slope_type)
+
+        if (rotation_angle == 90):
+            new_slope_array = rotate_slope_90(slope_array)
+        elif (rotation_angle == 180):
+            new_slope_array = rotate_slope_180(slope_array)
+        elif (rotation_angle == 270):
+            new_slope_array = rotate_slope_270(slope_array)
+        
+        new_slope_type = new_slope_array[idx]
+        
+    elif (57 <= slope_type <= 60):
+        pass
+    
+    if (new_slope_type != None):    # TODO: provisory
+        new_slope_type = new_slope_type << 2
+        # clear the last 6 bits
+        byte = byte & 3
+        byte += new_slope_type
+        new_block_data = block_data[:-1] + int.to_bytes(byte)
+    else:
+        new_block_data = block_data
+
+    return new_block_data
+
 
 def rotate_info(block_info_array, rotation_angle):
     """Rotate tiles, slopes, road arrows, rotate tile rotations etc."""
@@ -549,9 +770,19 @@ def rotate_info(block_info_array, rotation_angle):
 
                 if (is_empty_block(old_block_data)):
                     continue
+                
+                # some field blocks can have arrows, which relates to train direction
+                if (is_road_field_block(old_block_data)):
+                    new_block_data = rotate_road_arrows(old_block_data, rotation_angle)
+                else:
+                    new_block_data = old_block_data
+                
+                if block_has_lid(new_block_data):
+                    new_block_data = rotate_lid(new_block_data, rotation_angle)
+                new_block_data = rotate_sides(new_block_data, rotation_angle)
 
-                new_block_data = rotate_road_arrows(old_block_data, rotation_angle)
-                new_block_data = rotate_lid(new_block_data, rotation_angle)
+                if is_slope(new_block_data):
+                    new_block_data = rotate_slope(new_block_data, rotation_angle)
 
                 block_info_array[z][y][x] = new_block_data
                 #return  # TODO: provisory
