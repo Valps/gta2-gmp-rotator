@@ -1,6 +1,8 @@
 # gta2-gmp-rotator
 Rotate an uncompressed GTA2 map by 90°, 180° or 270° clockwise.
 
+In the future, after understanding how maps are compressed and uncompressed, I can make it rotate compressed maps.
+
 ##  How to use
 
 - Requires python 3.X.X
@@ -23,7 +25,7 @@ Now open the rotated map and click "save compressed". <ins>**Be aware that GTA2 
 
 (optional) Next you might remove the uncompressed data and thus reducing map size using GMP optmizer.
 
-## What is rotated:
+## What it rotates:
 
 - Block positions
 - Block tile lids
