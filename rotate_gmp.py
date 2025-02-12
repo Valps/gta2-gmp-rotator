@@ -16,7 +16,7 @@ BLOCK_INFO_SIZE = 12
 LIGHT_INFO_SIZE = 16
 ZONE_TYPE_COORDS_DATA_SIZE = 5     # not includes the name length neither the name itself
 
-LIGHT_MAX_X = 32767     # 255*128 + 64 - 1, where 64 = max offset           32704
+LIGHT_MAX_X = 32767     # 255*128 + 64 - 1, where 64 = max offset
 LIGHT_MAX_Y = 32767     # 255*128 + 64 - 1
 
 AIR_TYPE = 0
@@ -28,19 +28,6 @@ def two_nibble_from_byte(byte):
     upper_nibble = byte // 16
     lower_nibble = byte % 16
     return (upper_nibble, lower_nibble)
-
-def calculate_new_xy_from_rot(x, y, rot):
-    if rot == 0:
-        return (x,y)
-    elif rot == 90:
-        return (y, MAP_WIDTH - x)
-    elif rot == 180:
-        return (MAP_WIDTH - x, MAP_HEIGHT - y)
-    elif rot == 270:
-        return (MAP_HEIGHT - y, x)
-    else:
-        print(f"Error: wrong rotation: {rot}")
-        sys.exit(-1)
 
 def return_rotation_value_str(binary_rotation_type):
     if (binary_rotation_type == 0):
@@ -56,13 +43,13 @@ def return_rotation_value_str(binary_rotation_type):
         sys.exit(-1)
 
 def return_block_type_str(binary_block_type):
-    if (binary_block_type == 0):
+    if (binary_block_type == AIR_TYPE):
         return "air"
-    elif (binary_block_type == 1):
+    elif (binary_block_type == ROAD_TYPE):
         return "road"
-    elif (binary_block_type == 2):
+    elif (binary_block_type == PAVEMENT_TYPE):
         return "pavement"
-    elif (binary_block_type == 3):
+    elif (binary_block_type == FIELD_TYPE):
         return "field"
     else:
         print(f"Error: wrong binary block type: {binary_block_type}")
@@ -70,13 +57,11 @@ def return_block_type_str(binary_block_type):
 
 def convert_binary_rot(old_rotation, rotation_angle):
     rotation_angle_bin = ROTATION_ANGLES.index(rotation_angle)
-    new_rotation = (old_rotation + rotation_angle_bin) % 4
+    new_rotation = (old_rotation + rotation_angle_bin) % 4    # sum rotations and get mod 4
     return new_rotation
 
-def detect_headers(gmp_path):
-    #offsets = []
+def detect_headers_and_get_chunks(gmp_path):
 
-    # [offset, size]
     chunk_info = dict(UMAP = [None, None], 
                    CMAP = [None, None], 
                    DMAP = [None, None], 
@@ -88,7 +73,6 @@ def detect_headers(gmp_path):
                    EDIT = [None, None],
                    THSR = [None, None],
                    RGEN = [None, None])
-    
     
 
     with open(gmp_path, 'rb') as file:
@@ -248,7 +232,7 @@ def read_slope_info(slope_byte):
     block_type = (slope_byte % 4)
     slope_byte = slope_byte >> 2
 
-    slope_type = slope_byte #(slope_byte % 64)
+    slope_type = slope_byte
 
     print(f"Block type: {return_block_type_str(block_type)}")
     print(f"Slope type: {slope_type}\n")
@@ -258,7 +242,6 @@ def read_first_blocks_UMAP(gmp_path, chunk_infos, num_blocks, print_last_block_o
     with open(gmp_path, 'rb') as file:
         
         umap_offset = chunk_infos["UMAP"][0]
-        #size = chunk_infos["UMAP"][1]
 
         size = BLOCK_INFO_SIZE*num_blocks    # block_info size: 0xC = 12
 
@@ -310,13 +293,10 @@ def read_block_UMAP(gmp_path, chunk_infos, tgt_x, tgt_y, tgt_z):
         umap_offset = chunk_infos["UMAP"][0]
         size = chunk_infos["UMAP"][1]
 
-        #size = BLOCK_INFO_SIZE*num_blocks    # block_info size: 0xC = 12
-
         file.seek(umap_offset)
         
         current_offset = umap_offset
 
-        #block_idx = get_umap_block_idx_from_xyz(tgt_x, tgt_y, tgt_z)
         block_idx = tgt_x + tgt_y*256 + tgt_z*256*256
 
         file.seek(umap_offset + BLOCK_INFO_SIZE*block_idx)
@@ -456,8 +436,6 @@ def shuffle_bits(nibble, rotation_angle):
     return new_nibble
 
 def rotate_road_arrows(block_data, rotation_angle):
-    #print(block_data)
-    #print(type(block_data[10]))
     old_red_arrows_nibble, old_green_arrows_nibble = two_nibble_from_byte(block_data[10])
 
     if old_green_arrows_nibble != 0:
@@ -505,11 +483,11 @@ def rotate_lid(block_data, rotation_angle):
             new_rotation = convert_binary_rot(old_rotation, 270)
 
     sum_bits = new_rotation * (2**14)   # shift left by 14
-    lid_word = lid_word & 16383 #(int(str(0x3FFF), 16))    # clear the last two bits
+    lid_word = lid_word & 16383     # clear the last two bits
     lid_word += sum_bits
 
     new_byte_array = bytes([lid_word % 256, lid_word // 256])
-    new_block_data = block_data[:8] + new_byte_array + block_data[10:]     # int.to_bytes(new_byte_array, byteorder='little')
+    new_block_data = block_data[:8] + new_byte_array + block_data[10:]
     return new_block_data
 
 def rotate_sides(block_data, rotation_angle):
@@ -657,7 +635,7 @@ def rotate_slope(block_data, rotation_angle):
 
     new_slope_type = None
 
-    if (1 <= slope_type <= 8):
+    if (1 <= slope_type <= 8):      # slope 1/2
         if (slope_type % 2 == 1):   # lower
             
             slope_array = [1, 3, 5, 7]
@@ -686,7 +664,7 @@ def rotate_slope(block_data, rotation_angle):
             
             new_slope_type = new_slope_array[idx]
 
-    elif (9 <= slope_type <= 40):
+    elif (9 <= slope_type <= 40):       # slope 1/8
 
         if (9 <= slope_type <= 16):
             offset = slope_type - 9
@@ -717,7 +695,7 @@ def rotate_slope(block_data, rotation_angle):
             new_slope_type = 17 + offset
 
 
-    elif (41 <= slope_type <= 44):
+    elif (41 <= slope_type <= 44):      # slope 1/1
 
         slope_array = [41, 42, 43, 44]
         idx = slope_array.index(slope_type)
@@ -745,7 +723,7 @@ def rotate_slope(block_data, rotation_angle):
         
         new_slope_type = new_slope_array[idx]
 
-    elif (49 <= slope_type <= 52):  # TODO:  fix tile sides
+    elif (49 <= slope_type <= 52):
         
         slope_array = [49, 52, 51, 50]
         idx = slope_array.index(slope_type)
@@ -775,7 +753,7 @@ def rotate_slope(block_data, rotation_angle):
 
     elif (57 <= slope_type <= 60):
 
-        slope_array = [57, 59, 60, 58] #[53, 54, 56, 55]
+        slope_array = [57, 59, 60, 58]
         idx = slope_array.index(slope_type)
 
         if (rotation_angle == 90):
@@ -810,7 +788,7 @@ def rotate_info(block_info_array, rotation_angle):
                 if (is_empty_block(old_block_data)):
                     continue
                 
-                # some field blocks can have arrows, which relates to train direction
+                # some field blocks can have arrows, which is the case of train railroads
                 if (is_road_field_block(old_block_data)):
                     new_block_data = rotate_road_arrows(old_block_data, rotation_angle)
                 else:
@@ -854,7 +832,6 @@ def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
                 
                 if (y > 255):
                     y = 0
-                    #print(f"Rotating {rotation_angle}° layer coord z = {z}")
                     z += 1
                 
                 if (z >= 8):
@@ -873,7 +850,6 @@ def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
                 
                 if (y > 255):
                     y = 0
-                    #print(f"Rotating {rotation_angle}° layer coord z = {z}")
                     z += 1
                 
                 if (z >= 8):
@@ -892,7 +868,6 @@ def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
                 
                 if (y > 255):
                     y = 0
-                    #print(f"Rotating {rotation_angle}° layer coord z = {z}")
                     z += 1
                 
                 if (z >= 8):
@@ -1058,7 +1033,6 @@ def rotate_gmp_zones(output_path, chunk_infos, rotation_angle, zones_info_array)
             
             file.write(zones_info_array[zone_idx])
             current_offset += len(zones_info_array[zone_idx])
-            #print(f"Zone {zone_idx}, Name length: {len(zones_info_array[zone_idx]) - ZONE_TYPE_COORDS_DATA_SIZE - 1}")
             zone_idx += 1
 
     return
@@ -1128,9 +1102,6 @@ def rotate_gmp(gmp_path, chunk_infos, rotation_angle):
 
 
 
-
-
-
 def main():
     parser = argparse.ArgumentParser(PROGRAM_NAME)
     parser.add_argument("gmp_path")
@@ -1154,11 +1125,7 @@ def main():
         print("File not found.")
         sys.exit(-1)
     
-    #read_gmp(gmp_path)
-    chunk_infos = detect_headers(gmp_path)
-
-    #read_gmp(gmp_path, chunk_infos)
-    
+    chunk_infos = detect_headers_and_get_chunks(gmp_path)
     rotate_gmp(gmp_path, chunk_infos, rotation_angle)
         
     return
