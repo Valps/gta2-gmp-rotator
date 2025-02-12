@@ -513,6 +513,16 @@ def rotate_sides(block_data, rotation_angle):
     top_word = int.from_bytes(block_data[4:6], 'little')
     bottom_word = int.from_bytes(block_data[6:8], 'little')
 
+    byte = block_data[-1]
+    slope_type = byte >> 2
+
+    # some slopes uses right or left sides only. Rotate their sides accordingly if rot = 90 or 270
+    if (45 <= slope_type <= 52
+        and (rotation_angle == 90 or rotation_angle == 270) ):
+
+        new_block_data = change_side_tile(block_data, slope_type, rotation_angle)
+        return new_block_data
+
     #array = [left_word, right_word, top_word, bottom_word]
     array = []
 
@@ -573,27 +583,19 @@ def fix_sides(block_data, side):
     top_word = int.from_bytes(block_data[4:6], 'little')
     bottom_word = int.from_bytes(block_data[6:8], 'little')
 
+    #array = [left_word, right_word, top_word, bottom_word]
+
     array = []
 
-    non_zero_side = None
-    if (right_word != 0):
-        non_zero_side = right_word
-    elif (left_word != 0):
-        non_zero_side = left_word
-    elif (top_word != 0):
-        non_zero_side = top_word
-    elif (bottom_word != 0):
-        non_zero_side = bottom_word
+    if (side == 'right'):
+        array = [right_word, 0, 0, 0]
+    elif (side == 'left'):
+        array = [0, left_word, 0, 0]
     else:
-        print("Warning: all sides are zero")
+        print("Error: wrong 'side' param in func 'fix_sides'.")
+        sys.exit(-1)
 
-    if (non_zero_side is not None):
-        if (side == 'right'):
-            array = [0, non_zero_side, 0, 0]
-        elif (side == 'left'):
-            array = [non_zero_side, 0, 0, 0]
-
-        new_byte_array = bytes([array[0] % 256, 
+    new_byte_array = bytes([array[0] % 256, 
                                 array[0] // 256,
                                 array[1] % 256, 
                                 array[1] // 256,
@@ -602,9 +604,7 @@ def fix_sides(block_data, side):
                                 array[3] % 256, 
                                 array[3] // 256])
         
-        new_block_data = new_byte_array + block_data[8:]
-    else:
-        new_block_data = block_data
+    new_block_data = new_byte_array + block_data[8:]
 
     return new_block_data
 
@@ -615,11 +615,29 @@ def change_side_tile(block_data, slope_type, rotation_angle):
         or slope_type == 48
         or slope_type == 50
         or slope_type == 52):   # right side
+
+        # skip if the tile still in correct position
+        if (rotation_angle == 90 and (slope_type == 46 or slope_type == 50)):
+            return block_data
+
+        if (rotation_angle == 270 and (slope_type == 48 or slope_type == 52)):
+            return block_data
+        
+        # or else change the tile side
         new_block_data = fix_sides(block_data, 'right')
     elif (slope_type == 45
         or slope_type == 47
         or slope_type == 49
         or slope_type == 51):   # left side
+
+        # skip if the tile still in correct position
+        if (rotation_angle == 90 and (slope_type == 47 or slope_type == 51)):
+            return block_data
+
+        # or else change the tile side
+        if (rotation_angle == 270 and (slope_type == 45 or slope_type == 49)):
+            return block_data
+
         new_block_data = fix_sides(block_data, 'left')
     else:
         new_block_data = block_data
@@ -729,12 +747,10 @@ def rotate_slope(block_data, rotation_angle):
         pass
         if (rotation_angle == 90):
             new_slope_array = rotate_slope_90(slope_array)
-            block_data = change_side_tile(block_data, slope_type, rotation_angle)   # TODO
         elif (rotation_angle == 180):
             new_slope_array = rotate_slope_180(slope_array)
         elif (rotation_angle == 270):
             new_slope_array = rotate_slope_270(slope_array)
-            block_data = change_side_tile(block_data, slope_type, rotation_angle)   # TODO
         
         new_slope_type = new_slope_array[idx]
 
@@ -1099,6 +1115,8 @@ def rotate_gmp(gmp_path, chunk_infos, rotation_angle):
     rotate_gmp_blocks(output_path, chunk_infos, rotation_angle, block_info_array)
     rotate_gmp_zones(output_path, chunk_infos, rotation_angle, zones_info_array)
     rotate_gmp_lights(output_path, chunk_infos, rotation_angle, light_info_array)
+
+    print(f"\nGMP rotated successfully by {rotation_angle}° clockwise")
 
     # TODO:  only ste.gmp use this header
     #rotate_gmp_objects(output_path, chunk_infos, rotation_angle, obj_info_array)
