@@ -486,6 +486,11 @@ def rotate_road_arrows(block_data, rotation_angle):
 def rotate_lid(block_data, rotation_angle):
     lid_word = int.from_bytes(block_data[8:10], 'little')
 
+    # verify if the lid tile is 1023 (used in slopes 49...52)
+    tile_idx = lid_word % 1024
+    if (tile_idx == 1023):
+        return block_data   # do nothing
+
     old_rotation = lid_word >> 14
     new_rotation = convert_binary_rot(old_rotation, rotation_angle)
 
@@ -849,7 +854,7 @@ def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
                 
                 if (y > 255):
                     y = 0
-                    print(f"Rotating {rotation_angle}° layer coord z = {z}")
+                    #print(f"Rotating {rotation_angle}° layer coord z = {z}")
                     z += 1
                 
                 if (z >= 8):
@@ -868,7 +873,7 @@ def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
                 
                 if (y > 255):
                     y = 0
-                    print(f"Rotating {rotation_angle}° layer coord z = {z}")
+                    #print(f"Rotating {rotation_angle}° layer coord z = {z}")
                     z += 1
                 
                 if (z >= 8):
@@ -887,7 +892,7 @@ def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
                 
                 if (y > 255):
                     y = 0
-                    print(f"Rotating {rotation_angle}° layer coord z = {z}")
+                    #print(f"Rotating {rotation_angle}° layer coord z = {z}")
                     z += 1
                 
                 if (z >= 8):
@@ -1088,7 +1093,7 @@ def rotate_gmp_lights(output_path, chunk_infos, rotation_angle, light_info_array
 def rotate_gmp(gmp_path, chunk_infos, rotation_angle):
 
     if chunk_infos["UMAP"][0] is None:
-        print("Error: This GMP rotator only works with uncompressed maps.")
+        print("Error: This GMP rotator only support uncompressed maps.")
         sys.exit(-1)
 
     # create a copy of gmp file
@@ -1116,9 +1121,9 @@ def rotate_gmp(gmp_path, chunk_infos, rotation_angle):
     rotate_gmp_zones(output_path, chunk_infos, rotation_angle, zones_info_array)
     rotate_gmp_lights(output_path, chunk_infos, rotation_angle, light_info_array)
 
-    print(f"\nGMP rotated successfully by {rotation_angle}° clockwise")
+    print(f"\nSuccess! GMP rotated by {rotation_angle}° clockwise.")
 
-    # TODO:  only ste.gmp use this header
+    # TODO:  only ste.gmp use MOBJ header, but it can't be decompressed without corrupting gmp
     #rotate_gmp_objects(output_path, chunk_infos, rotation_angle, obj_info_array)
 
 
