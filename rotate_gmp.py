@@ -14,35 +14,20 @@ MAP_HEIGHT = 255
 
 BLOCK_INFO_SIZE = 12
 LIGHT_INFO_SIZE = 16
-ZONE_INFO_DATA_SIZE = 5     # not includes the name length neither the name itself
+ZONE_TYPE_COORDS_DATA_SIZE = 5     # not includes the name length neither the name itself
 
-LIGHT_MAX_X = 32704 # 32832 # 256*128 + 64, where 64 = max offset
-LIGHT_MAX_Y = 32704 # 32832 # 256*128 + 64
+LIGHT_MAX_X = 32768     # 255*128 + 64, where 64 = max offset           32704
+LIGHT_MAX_Y = 32768     # 255*128 + 64
 
 AIR_TYPE = 0
 ROAD_TYPE = 1
 PAVEMENT_TYPE = 2
 FIELD_TYPE = 3
 
-class gmp_map_light:
-    def __init__(self, argb: int, x: int, y: int, z: int, radius: int, intensity: int, shape: int, on_time: int, off_time: int):
-        self.argb = argb                # s32
-        self.x = x                      # s16
-        self.y = y                      # s16
-        self.z = z                      # s16
-        self.radius = radius            # s16
-        self.intensity = intensity      # char
-        self.shape = shape              # char
-        self.on_time = on_time          # char
-        self.off_time = off_time        # char
-
 def two_nibble_from_byte(byte):
     upper_nibble = byte // 16
     lower_nibble = byte % 16
     return (upper_nibble, lower_nibble)
-
-#def byte_from_two_nibble(upper_nibble, lower_nibble):
-#    return upper_nibble*16 + lower_nibble
 
 def calculate_new_xy_from_rot(x, y, rot):
     if rot == 0:
@@ -196,57 +181,6 @@ def parse_light(gmp_path, chunk_infos):
             current_offset += 16
     print("")
     return lights
-
-def rotate_light(gmp_path, chunk_infos, rotation_angle, old_lights):
-
-    with open(gmp_path, 'rb+') as file:
-        
-        lght_offset = chunk_infos["LGHT"][0]
-        size = chunk_infos["LGHT"][1]
-
-        file.seek(lght_offset)
-        
-        current_offset = lght_offset
-        light_idx = 0
-
-        while (current_offset < lght_offset + size):
-            argb = int.from_bytes(file.read(4),'little')
-
-            f_old_x = old_lights[light_idx][0]
-            f_old_y = old_lights[light_idx][1]
-
-            old_x = convert_fix16(f_old_x, get_offset=True)
-            old_y = convert_fix16(f_old_y, get_offset=True)
-
-            new_x, new_y = calculate_new_xy_from_rot(old_x, old_y, rotation_angle)
-
-            f_new_x = new_x*128
-            f_new_y = new_y*128
-
-            bytearray([f_new_x, f_new_y])   # TODO
-
-            file.write()
-
-            #fix16_x = int.from_bytes(file.read(2),'little')
-            #fix16_y = int.from_bytes(file.read(2),'little')
-
-            fix16_z = int.from_bytes(file.read(2),'little')
-            fix16_radius = int.from_bytes(file.read(2),'little')
-            intensity = int.from_bytes(file.read(1),'little')
-            shape = int.from_bytes(file.read(1),'little')
-            on_time = int.from_bytes(file.read(1),'little')
-            off_time = int.from_bytes(file.read(1),'little')
-            return
-            x, off_x = convert_fix16(fix16_x, get_offset=True)
-            y, off_y = convert_fix16(fix16_y, get_offset=True)
-            z, off_z = convert_fix16(fix16_z, get_offset=True)
-            radius = convert_fix16(fix16_radius, get_offset=False)
-
-            print(f"Light: x = {x} off = {off_x}, y = {y} off = {off_y}, z = {z} off = {off_z}, radius = {radius}")
-            current_offset += 16
-            light_idx += 1
-
-    return
 
 def read_lid_info(lid):
     data = []
@@ -461,7 +395,7 @@ def is_empty_block(block_data):
     if (is_air_block(block_data)):
         lid_word = int.from_bytes(block_data[8:10], 'little')
         lid_tile = lid_word % 1024
-        if (lid_tile == 0): # TODO: air blocks with non-null sides
+        if (lid_tile == 0):
             left_word = int.from_bytes(block_data[0:2], 'little')
             right_word = int.from_bytes(block_data[2:4], 'little')
             top_word = int.from_bytes(block_data[4:6], 'little')
@@ -696,7 +630,7 @@ def rotate_slope(block_data, rotation_angle):
     byte = block_data[-1]
     slope_type = byte >> 2
 
-    new_block_data = block_data # TODO: remove this
+    new_block_data = block_data
 
     new_slope_type = None
 
@@ -832,7 +766,7 @@ def rotate_slope(block_data, rotation_angle):
         
         new_slope_type = new_slope_array[idx]
     
-    if (new_slope_type != None):    # TODO: provisory
+    if (new_slope_type != None):
         new_slope_type = new_slope_type << 2
         # clear the last 6 bits
         byte = byte & 3
@@ -946,6 +880,10 @@ def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
     print(f"Map blocks rotated successfully by {rotation_angle}°")
 
 def get_zones_info_data(gmp_path, chunk_infos):
+
+    if chunk_infos["ZONE"][0] is None:
+        return None # no zones
+
     zones_data_array = []
     with open(gmp_path, 'rb') as file:
 
@@ -956,14 +894,24 @@ def get_zones_info_data(gmp_path, chunk_infos):
         
         current_offset = zone_offset
         while (current_offset < zone_offset + size):
-            zone_data = file.read(ZONE_INFO_DATA_SIZE)
-            #zones_data_array.append(zone_data)
-            # TODO: variable size, read name length
-            current_offset += ZONE_INFO_DATA_SIZE
+            zone_info = file.read(ZONE_TYPE_COORDS_DATA_SIZE)
+
+            current_offset += ZONE_TYPE_COORDS_DATA_SIZE
+
+            name_length = int.from_bytes(file.read(1))
+            zone_name_data = file.read(name_length)
+            current_offset += 1 + name_length
+
+            zone_data = zone_info + int.to_bytes(name_length) + zone_name_data
+            zones_data_array.append(zone_data)
 
     return zones_data_array
 
 def get_light_info_data(gmp_path, chunk_infos):
+
+    if chunk_infos["LGHT"][0] is None:
+        return None # no zones
+
     lights_data = []
     with open(gmp_path, 'rb') as file:
 
@@ -995,8 +943,6 @@ def rotate_light_coordinates(light_data, rotation_angle):
     light_x = int.from_bytes(light_data[4:6], 'little')   # word
     light_y = int.from_bytes(light_data[6:8], 'little')   # word
 
-    #print(f"Old: X = {light_x}, Y = {light_y}, New: ",end='')
-
     if (rotation_angle == 180):
         light_x = LIGHT_MAX_X - light_x
         light_y = LIGHT_MAX_Y - light_y
@@ -1005,7 +951,6 @@ def rotate_light_coordinates(light_data, rotation_angle):
     elif (rotation_angle == 270):
         light_x, light_y = light_y , LIGHT_MAX_X - light_x
 
-    #print(f"X = {light_x}, Y = {light_y}")
     if (light_x > LIGHT_MAX_X or light_y > LIGHT_MAX_Y):
         print(f"Error: light coordinate overflow: x = {light_x}, y = {light_y}")
         sys.exit(-1)
@@ -1020,6 +965,43 @@ def rotate_light_coordinates(light_data, rotation_angle):
 
     return new_light_data
 
+def rotate_zone_coordinates(zone_data, rotation_angle):
+    zone_x = zone_data[1]
+    zone_y = zone_data[2]
+    zone_w = zone_data[3]
+    zone_h = zone_data[4]
+
+    if (rotation_angle == 180):
+        zone_x = MAP_WIDTH - zone_x - zone_w + 1
+        zone_y = MAP_HEIGHT - zone_y - zone_h + 1
+    elif (rotation_angle == 90):
+        zone_x, zone_y = MAP_HEIGHT - zone_y - zone_h + 1, zone_x
+        zone_w, zone_h = zone_h, zone_w
+        pass
+    elif (rotation_angle == 270):
+        zone_x, zone_y = zone_y, MAP_WIDTH - zone_x - zone_w + 1
+        zone_w, zone_h = zone_h, zone_w
+        pass
+
+    if (zone_x < 0 or zone_y < 0):
+        print(f"Error: negative zone coordinates: x = {zone_x}, y = {zone_y}")
+        sys.exit(-1)
+    if (zone_x > MAP_WIDTH or zone_y > MAP_HEIGHT):
+        print(f"Error: zone coordinates above {MAP_WIDTH}: x = {zone_x}, y = {zone_y}")
+        sys.exit(-1)
+    if (zone_x + zone_w > MAP_WIDTH + 1 or zone_y + zone_h > MAP_HEIGHT + 1):
+        print(f"Error: zone coordinates overflow: x = {zone_x}, y = {zone_y}, w = {zone_w}, h = {zone_h}")
+        sys.exit(-1)
+    
+    new_zone_data = (int.to_bytes(zone_data[0]) 
+                    + int.to_bytes(zone_x) 
+                    + int.to_bytes(zone_y) 
+                    + int.to_bytes(zone_w) 
+                    + int.to_bytes(zone_h) 
+                    + zone_data[5:])
+
+    return new_zone_data
+
 def rotate_light_info(light_info_array, rotation_angle):
     for i in range(len(light_info_array)):
         old_light_data = light_info_array[i]
@@ -1027,19 +1009,45 @@ def rotate_light_info(light_info_array, rotation_angle):
         light_info_array[i] = new_light_data
     return
 
-# TODO
-def rotate_gmp_zones(output_path, chunk_infos, rotation_angle, zones_info_array):
+def rotate_zone_info(zones_info_array, rotation_angle):
+    for i in range(len(zones_info_array)):
+        old_zone_data = zones_info_array[i]
+        new_zone_data = rotate_zone_coordinates(old_zone_data, rotation_angle)
+        zones_info_array[i] = new_zone_data
     return
 
+def rotate_gmp_zones(output_path, chunk_infos, rotation_angle, zones_info_array):
+    if chunk_infos["ZONE"][0] is None:
+        return  # no zones
+    
+    print("Rotating zones coordinates...")
+    rotate_zone_info(zones_info_array, rotation_angle)
+    
+    with open(output_path, 'r+b') as file:
+        zone_offset = chunk_infos["ZONE"][0]
+        size = chunk_infos["ZONE"][1]
 
-# TODO TODO
+        file.seek(zone_offset)
+        
+        current_offset = zone_offset
+
+        zone_idx = 0
+
+        while (current_offset < zone_offset + size):
+            
+            file.write(zones_info_array[zone_idx])
+            current_offset += len(zones_info_array[zone_idx])
+            #print(f"Zone {zone_idx}, Name length: {len(zones_info_array[zone_idx]) - ZONE_TYPE_COORDS_DATA_SIZE - 1}")
+            zone_idx += 1
+
+    return
+
 def rotate_gmp_lights(output_path, chunk_infos, rotation_angle, light_info_array):
 
     if chunk_infos["LGHT"][0] is None:
         return  # no lights
     
     print("Rotating lights coordinates...")
-    #print(f"Num of Lights: {len(light_info_array)}")
     rotate_light_info(light_info_array, rotation_angle)
     
     with open(output_path, 'r+b') as file:
@@ -1052,7 +1060,7 @@ def rotate_gmp_lights(output_path, chunk_infos, rotation_angle, light_info_array
 
         light_idx = 0
 
-        while (current_offset < lght_offset + size - 1):
+        while (current_offset < lght_offset + size):
             
             file.write(light_info_array[light_idx])
             current_offset += LIGHT_INFO_SIZE
@@ -1084,12 +1092,12 @@ def rotate_gmp(gmp_path, chunk_infos, rotation_angle):
 
     # get block infos
     block_info_array = get_block_info_data(gmp_path, chunk_infos)
-    #zones_info_array = get_zones_info_data(gmp_path, chunk_infos)
+    zones_info_array = get_zones_info_data(gmp_path, chunk_infos)
     light_info_array = get_light_info_data(gmp_path, chunk_infos)
 
     # rotate map
     rotate_gmp_blocks(output_path, chunk_infos, rotation_angle, block_info_array)
-    #rotate_gmp_zones(output_path, chunk_infos, rotation_angle, zones_info_array)
+    rotate_gmp_zones(output_path, chunk_infos, rotation_angle, zones_info_array)
     rotate_gmp_lights(output_path, chunk_infos, rotation_angle, light_info_array)
 
     # TODO:  only ste.gmp use this header
