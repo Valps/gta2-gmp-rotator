@@ -16,8 +16,8 @@ BLOCK_INFO_SIZE = 12
 LIGHT_INFO_SIZE = 16
 ZONE_TYPE_COORDS_DATA_SIZE = 5     # not includes the name length neither the name itself
 
-LIGHT_MAX_X = 32768     # 255*128 + 64, where 64 = max offset           32704
-LIGHT_MAX_Y = 32768     # 255*128 + 64
+LIGHT_MAX_X = 32767     # 255*128 + 64 - 1, where 64 = max offset           32704
+LIGHT_MAX_Y = 32767     # 255*128 + 64 - 1
 
 AIR_TYPE = 0
 ROAD_TYPE = 1
