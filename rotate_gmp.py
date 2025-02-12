@@ -893,7 +893,7 @@ def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
                 if (z >= 8):
                     break
 
-    print(f"Map blocks rotated successfully by {rotation_angle}°")
+    #print(f"Map blocks rotated successfully by {rotation_angle}°")
 
 def get_zones_info_data(gmp_path, chunk_infos):
 
