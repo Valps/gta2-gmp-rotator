@@ -1001,9 +1001,9 @@ def rotate_light_coordinates(light_data, rotation_angle):
         light_x = LIGHT_MAX_X - light_x
         light_y = LIGHT_MAX_Y - light_y
     elif (rotation_angle == 90):
-        light_x, light_y = light_y , LIGHT_MAX_X - light_x
-    elif (rotation_angle == 270):
         light_x, light_y = LIGHT_MAX_Y - light_y , light_x
+    elif (rotation_angle == 270):
+        light_x, light_y = light_y , LIGHT_MAX_X - light_x
 
     #print(f"X = {light_x}, Y = {light_y}")
     if (light_x > LIGHT_MAX_X or light_y > LIGHT_MAX_Y):
