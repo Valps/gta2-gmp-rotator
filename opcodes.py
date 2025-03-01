@@ -1,13 +1,15 @@
 from enum import Enum, auto
 
+# TODO: sort them by most likely to appear to lesser
 # declare / create opcodes
-DEC_OPCODES_LIST = ["PLAYER_PED", "PARKED_CAR_DATA", "RADIO_STATION", "CONVEYOR", "GENERATOR",
-            "DESTRUCTOR", "CRANE_DATA", "DECLARE_CRANE_POWERUP", "OBJ_DATA", "CREATE_CAR", 
-            "CREATE_SOUND", "CAR_DATA", "SET_GANG_INFO", "CREATE_GANG_CAR"]
+DEC_OPCODES_LIST = ["PLAYER_PED", "PARKED_CAR_DATA", "RADIO_STATION", "CONVEYOR", "GENERATOR", "LIGHT", 
+            "DESTRUCTOR", "CRANE_DATA", "DECLARE_CRANE_POWERUP", "OBJ_DATA", "CAR_DATA", "CHAR_DATA", 
+            "CREATE_OBJ", "CREATE_CAR", "CREATE_SOUND", "CREATE_CHAR", "CREATE_LIGHT", "SET_GANG_INFO", 
+            "CREATE_GANG_CAR"]
 
 # execution opcodes
-EXEC_OPCODES_LIST = ["POINT_ARROW_AT", "LEVEL_END_POINT_ARROW_AT", "EXPLODE",
-                "EXPLODE_NO_RING", "EXPLODE_LARGE", "EXPLODE_SMALL", "EXPLODE_WALL"]
+EXEC_OPCODES_LIST = ["POINT_ARROW_AT", "LEVEL_END_POINT_ARROW_AT", "EXPLODE", "EXPLODE_NO_RING", 
+                    "EXPLODE_LARGE", "EXPLODE_SMALL", "EXPLODE_WALL", "SET_CHAR_OBJECTIVE"]
 
 # boolean opcodes
 BOOL_OPCODES_LIST = ["IS_CAR_IN_BLOCK", "CHECK_CAR_WRECKED_IN_AREA", "LOCATE_CHARACTER_ANY_MEANS", 
@@ -36,6 +38,9 @@ class Cmd(Enum):
     GANG_INFO = auto()
     PARAM_XYZ_F_OR_VAR = auto()
     COORD_XYZ_F_OR_VAR = auto()
+    OPT_PARAM_ENUM_OR_NUM = auto()
+    PARAM_FLOAT = auto()                # TODO
+    RGB = auto()                        # TODO
 
 def is_dec_opcode_rotatable(line):
     for opcode in DEC_OPCODES_LIST:
@@ -89,6 +94,35 @@ def get_next_numeric_param(line):
     
     if number_str:
         return ( int(number_str) , -1 )  # last param: end of line
+    else:
+        return ( None , -2 )       # optional var doesn't exist
+
+def is_next_param_num(line: str) -> bool:
+    """Check if the next param is a number (return True) 
+    or if it's either an enum or end of line (return False)
+    """
+    string = []
+    for i, chr in enumerate(line):
+        if not chr.isalnum():
+            continue
+        if chr.isdigit():   # check first alpha-num char
+            return True     # it's a number
+        else:
+            return False    # it's an enum
+    return False            # reached at the end of line (i.e. there is no param)
+
+def get_next_float(line: str):
+    """Get the next parameter as float. It also returns the string position after it."""
+    float_str = ""
+    for i, chr in enumerate(line):
+        if not chr.isdigit() and chr != '.':
+            if len(float_str) != 0:
+                return ( float(float_str) , i )
+            continue
+        float_str += chr
+    
+    if float_str:
+        return ( float(float_str) , -1 )  # last param: end of line
     else:
         return ( None , -2 )       # optional var doesn't exist
 
@@ -159,11 +193,12 @@ def get_gang_info(line):
     return formatted_params
 
 def read_line(line, *args) -> list:
-    """Read a command line string and return all parameters and opcodes from it as a list."""
+    """Read a command line string and return all parameters and opcodes from it as a list.
+    """
     command = []
     pointer = 0
     for arg in args:
-
+        
         is_float = True
 
         if (arg == Cmd.OPCODE 
@@ -176,7 +211,7 @@ def read_line(line, *args) -> list:
                 command.append(name)
                 if pointer == -1:       # has command line finished?
                     break
-                line = line[pointer:]
+                line = line[pointer:]   # forward position in string
             
         elif arg == Cmd.EQUAL:
             line = line.replace('=','') # just remove the equal sign
@@ -195,9 +230,10 @@ def read_line(line, *args) -> list:
             or arg == Cmd.COORD_XYZ_U8
             or arg == Cmd.COORD_XY_F 
             or arg == Cmd.COORD_XY_U8 
-            or arg == Cmd.WIDTH_HEIGHT):
+            or arg == Cmd.WIDTH_HEIGHT
+            or arg == Cmd.RGB):
 
-            if arg == Cmd.COORD_XYZ_U8 or arg == Cmd.COORD_XY_U8:
+            if arg == Cmd.COORD_XYZ_U8 or arg == Cmd.COORD_XY_U8 or arg == Cmd.RGB:
                 is_float = False
             coords, pointer = get_coords(line, is_float=is_float)
             command.append(coords)      # note: always use "append" for "get_coords" just for ensure.
@@ -237,6 +273,32 @@ def read_line(line, *args) -> list:
                 command.extend(name)
             finally:
                 line = line[pointer:]
+        
+        elif arg == Cmd.OPT_PARAM_ENUM_OR_NUM:
+            if is_next_param_num(line):
+                number, pointer = get_next_numeric_param(line)
+                command.append(number)
+            else:
+                name, pointer = get_next_name(line)
+                if name:
+                    command.append(name)
+                    if pointer == -1:       # has command line finished?
+                        break
+                    line = line[pointer:]   # forward position in string
+
+        elif arg == Cmd.PARAM_FLOAT:
+            f_number, pointer = get_next_float(line)
+            if f_number is not None:       # if it got a float number
+                command.append(f_number)
+                if pointer == -1:
+                    break               # command line has finished with last param
+                line = line[pointer:]
+            else:
+                break                   # command line has finished with no optional last param
+
+        #elif arg == Cmd.RGB:
+
+
 
     # remove whitespaces
     for i, param in enumerate(command):
@@ -271,9 +333,9 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
 
     # remove comment from line if it exists
     if comment is not None:
-        line_uppercase = line[ : line.find("//") ].upper()
-    else:
-        line_uppercase = line.upper()
+        line = line[ : line.find("//") ]
+    
+    line_uppercase = line.upper()
 
     # now start parsing the line
     
@@ -306,13 +368,33 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
             cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XY_F, Cmd.ROTATION, Cmd.VAR_NAME, Cmd.PARAM_ENUM, Cmd.COORD_XY_F, Cmd.ROTATION)
         print(cmd)
 
-    elif "OBJ_DATA" in line_uppercase:
-        # OBJ_DATA obj4 = (120.50, 120.50, 3.00) 0 TUNNEL_BLOCKER
-        # OBJ_DATA shop1 = (6.50, 181.50, 2.00) 0 CAR_SHOP MACHINEGUN_SHOP
-        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
+    elif "CHAR_DATA" in line_uppercase:
+        # 
+        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_ENUM)
         if len(cmd) > 2: # if not just declaring var
             # xyz/xy
             print(cmd)
+
+    elif "CREATE_CHAR" in line_uppercase:
+        # l_e_1_guard_1 = CREATE_CHAR (157.50, 9.50, 3.00) 8 0 CRIMINAL END
+        cmd = read_line(line, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.COORD_XYZ_F, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_ENUM)
+        print(cmd)
+
+    elif "OBJ_DATA" in line_uppercase:
+        # OBJ_DATA obj4 = (120.50, 120.50, 3.00) 0 TUNNEL_BLOCKER
+        # OBJ_DATA shop1 = (6.50, 181.50, 2.00) 0 CAR_SHOP MACHINEGUN_SHOP
+        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM_OR_NUM)
+        if len(cmd) > 2: # if not just declaring var
+            # xyz/xy
+            print(cmd)
+        return new_line
+
+    elif "CREATE_OBJ" in line_uppercase:
+        # l_e_1_molotov_1 = CREATE_OBJ (160.50, 11.50, 3.00) 0 COLLECT_04 10 END
+        cmd = read_line(line, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM_OR_NUM)
+        if type(cmd[-1]) == str and cmd[-1].upper() == "END":
+            cmd.pop()
+        print(cmd)
         return new_line
     
     elif "CAR_DATA" in line_uppercase:      # TODO: merge with OBJ_DATA
@@ -371,7 +453,17 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
 
         # xyz
         print(cmd)
-    
+
+    elif "CREATE_LIGHT" in line_uppercase:
+        # r_h_2_prison_alarm_light_1 = CREATE_LIGHT (29.00, 241.00, 1.00) 7.99 255 (255, 0, 0) 30 100 5
+        cmd = read_line(line, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.COORD_XYZ_F, Cmd.PARAM_FLOAT, Cmd.PARAM_NUM, Cmd.RGB, Cmd.PARAM_NUM, Cmd.PARAM_NUM, Cmd.PARAM_NUM)
+        print(cmd)
+
+    elif "LIGHT" in line_uppercase:
+        # LIGHT light1 = (182.50, 174.50, 2.00) 3.00 255 (98, 204, 140) 0 0 0
+        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_FLOAT, Cmd.PARAM_NUM, Cmd.RGB, Cmd.PARAM_NUM, Cmd.PARAM_NUM, Cmd.PARAM_NUM)
+        print(cmd)
+
     elif "SET_GANG_INFO" in line_uppercase:
         # SET_GANG_INFO (redngang, 5, PISTOL, MACHINE_GUN, MOLOTOV, 4, 47.50, 49.50, 255.00, 1, PICKUP, 3)
         cmd = read_line(line, Cmd.OPCODE, Cmd.GANG_INFO)
@@ -399,8 +491,12 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
 #line = "DESTRUCTOR des1 = (9.50, 83.50, 3.00) (1.00, 1.00)"
 #line = "SET_GANG_INFO (sciegang, 7, PISTOL, MACHINE_GUN, FLAME_THROWER, 5, 211.50, 219.50, 255.00, 1, STRATOSB, 10)"
 #line = "r_e_1_pickup_car = CREATE_GANG_CAR (24.00, 41.50, 2.00) 3 90 PICKUP END"
+#line = "l_e_1_molotov_1 = CREATE_OBJ (160.50, 11.50, 3.00) 0 COLLECT_04 10 END"
+#line = "l_e_1_guard_1 = CREATE_CHAR (157.50, 9.50, 3.00) 8 0 CRIMINAL END"
+#line = "LIGHT light1 = (182.50, 174.50, 2.00) 3.00 255 (98, 204, 140) 0 0 0"
+line = "r_h_2_prison_alarm_light_1 = CREATE_LIGHT (29.00, 241.00, 1.00) 7.99 255 (255, 0, 0) 30 100 5"
 
-#rotate_dec_opcode(line, 0)
+rotate_dec_opcode(line, 0)
 
 
 def rotate_exec_opcode(line: str, rotation_angle: int):
@@ -412,6 +508,10 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
     new_line = line
     comment = get_comment(line)
 
+    # remove comment from line if it exists
+    if comment is not None:
+        line = line[ : line.find("//") ]
+    
     line_uppercase = line.upper()
     
     if "POINT_ARROW_AT" in line_uppercase or "LEVEL_END_POINT_ARROW_AT" in line_uppercase:
