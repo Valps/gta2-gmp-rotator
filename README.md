@@ -40,4 +40,4 @@ Now open the rotated map and click "save compressed". <ins>**Be aware that GTA2 
 ## What it does NOT rotates:
 - Junctions
 
-However, the junctions (RGEN chunk) are computed again by DMA map editor when saving/compressing the rotated map.
+However, all junctions (RGEN chunk data) are computed again by DMA map editor when saving/compressing the rotated map, so there is no need to worry about them.
