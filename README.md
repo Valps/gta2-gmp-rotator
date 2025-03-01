@@ -30,9 +30,14 @@ Now open the rotated map and click "save compressed". <ins>**Be aware that GTA2 
 ## What it rotates:
 
 - Block positions
-- Block tile lids
-- Block tile sides
+- Block lid tiles
+- Block side tiles
 - All types of slopes
 - Road arrows (green & red)
 - Light coordinates
 - Zone coordinates
+
+## What it do NOT rotates:
+- Junctions
+
+However, the junctions (RGEN chunk) are computed again by DMA map editor when saving/compressing the rotated map.
