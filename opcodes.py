@@ -92,13 +92,13 @@ def get_next_numeric_param(line):
     else:
         return ( None , -2 )       # optional var doesn't exist
 
-def get_coords(line, is_float: bool) -> tuple[tuple, int, int]:
+def get_coords(line, is_float: bool) -> tuple[tuple, int]:
     """Get the next coordinates in 'line' as a tuple.
 
     It also returns the string position of the first ')' plus one
 
-    Ex: "(195.5, 15.5, 2.0) 25 0 END"  ->  (195.5, 15.5, 2.0) , 18 , 3
-        "(195.5, 15.5) 25 0 END"       ->  (195.5, 15.5) , 13 , 2
+    Ex: "(195.5, 15.5, 2.0) 25 0 END"  ->  (195.5, 15.5, 2.0) , 18
+        "(195.5, 15.5) 25 0 END"       ->  (195.5, 15.5) , 13
     """
     end_point = line.find(')')
     coords_tuple = line[ line.find('(') + 1 : end_point ]
@@ -262,13 +262,20 @@ def rotate_xy(old_x, old_y, rotation_ang, is_float=True):
 
 def rotate_dec_opcode(line: str, rotation_angle: int):
 
+    # TODO: remove this; do it before calling this function
     if not is_dec_opcode_rotatable(line):
         return line     # do nothing
     
     new_line = line
     comment = get_comment(line)
 
-    line_uppercase = line.upper()
+    # remove comment from line if it exists
+    if comment is not None:
+        line_uppercase = line[ : line.find("//") ].upper()
+    else:
+        line_uppercase = line.upper()
+
+    # now start parsing the line
     
     if "PLAYER_PED" in line_uppercase:
         # PLAYER_PED p1 = (97.50, 73.50, 2.00) 5 1
@@ -303,7 +310,7 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         # OBJ_DATA obj4 = (120.50, 120.50, 3.00) 0 TUNNEL_BLOCKER
         # OBJ_DATA shop1 = (6.50, 181.50, 2.00) 0 CAR_SHOP MACHINEGUN_SHOP
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
-        if len(cmd[2]): # if not just declaring var
+        if len(cmd) > 2: # if not just declaring var
             # xyz/xy
             print(cmd)
         return new_line
@@ -312,7 +319,7 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         # CAR_DATA name = (X,Y) remap rotation MODEL
         # CAR_DATA name = (X,Y,Z) remap rotation MODEL TRAILERMODEL
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
-        if len(cmd[2]): # if not just declaring var
+        if len(cmd) > 2: # if not just declaring var
             # xyz/xy
             print(cmd)
         return new_line
@@ -398,6 +405,7 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
 
 def rotate_exec_opcode(line: str, rotation_angle: int):
 
+    # TODO: remove this; do it before calling this function
     if not is_exec_opcode_rotatable(line):
         return line     # do nothing
     
@@ -413,20 +421,20 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
         # xyz
         
         return new_line
-    
-    elif ("EXPLODE" in line_uppercase
-          or "EXPLODE_NO_RING" in line_uppercase
-          or "EXPLODE_LARGE" in line_uppercase
-          or "EXPLODE_SMALL" in line_uppercase):
-        
-        cmd = read_line(line, Cmd.OPCODE, Cmd.COORD_XYZ_F_OR_VAR)
+
+    elif "EXPLODE_WALL" in line_uppercase:
+        cmd = read_line(line, Cmd.OPCODE, Cmd.COORD_XYZ_F, Cmd.PARAM_ENUM)
 
         # xyz
         print(cmd)
         return new_line
     
-    elif "EXPLODE_WALL" in line_uppercase:
-        cmd = read_line(line, Cmd.OPCODE, Cmd.COORD_XYZ_F, Cmd.PARAM_ENUM)
+    elif ("EXPLODE_NO_RING" in line_uppercase
+          or "EXPLODE_LARGE" in line_uppercase
+          or "EXPLODE_SMALL" in line_uppercase
+          or "EXPLODE" in line_uppercase):
+        
+        cmd = read_line(line, Cmd.OPCODE, Cmd.COORD_XYZ_F_OR_VAR)
 
         # xyz
         print(cmd)
@@ -436,9 +444,9 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
 
 
 #line = "POINT_ARROW_AT (arrow1, auto1)"
-#line = "POINT_ARROW_AT (arrow1, 43.50, 249.50, 2.00)"
+line = "POINT_ARROW_AT (arrow1, 43.50, 249.50, 2.00)"
 
-line = "EXPLODE_LARGE (143.5, 151.5, 2.0)"
-
+#line = "EXPLODE_LARGE (143.5, 151.5, 2.0)"
+#line = "EXPLODE_WALL (143.5, 151.5, 2.0) TOP"
 
 rotate_exec_opcode(line, 0)
