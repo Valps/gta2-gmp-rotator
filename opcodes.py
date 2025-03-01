@@ -49,7 +49,13 @@ def is_exec_opcode_rotatable(line):
             return True
     return False
 
-def get_next_name(line):
+def get_next_name(line) -> tuple[str, int]:
+    """Get the next word in the line. It can be a var name (without being between parenthesis) 
+    or an enum.
+
+    It also returns the string position after that word. If it has reached the end of line, 
+    return -1 instead.
+    """
     name = ""
     for i, chr in enumerate(line):
         if not chr.isalnum() and not chr == '_':
@@ -60,11 +66,19 @@ def get_next_name(line):
     return ( name , -1 )    # finish of command line
 
 def get_var_name(line):
+    """Get the var name between parenthesis."""
     params_tuple = line[ line.find('(') + 1 : line.find(')') ]
     params = params_tuple.split(',')
     return params, line.find(')') + 1
 
 def get_next_numeric_param(line):
+    """Get the next parameter as number. It also returns the string position after it.
+
+    If the line has ended after that number, it will return -1 as second return value.
+
+    If there are not numbers until the end of line, the function will return (None, -2). This
+    is the case of optional parameters that doesn't exists.
+    """
     number_str = ""
     for i, chr in enumerate(line):
         if not chr.isdigit():
@@ -78,8 +92,16 @@ def get_next_numeric_param(line):
     else:
         return ( None , -2 )       # optional var doesn't exist
 
-def get_coords(line, is_float):
-    coords_tuple = line[ line.find('(') + 1 : line.find(')') ]
+def get_coords(line, is_float: bool) -> tuple[tuple, int, int]:
+    """Get the next coordinates in 'line' as a tuple.
+
+    It also returns the string position of the first ')' plus one
+
+    Ex: "(195.5, 15.5, 2.0) 25 0 END"  ->  (195.5, 15.5, 2.0) , 18 , 3
+        "(195.5, 15.5) 25 0 END"       ->  (195.5, 15.5) , 13 , 2
+    """
+    end_point = line.find(')')
+    coords_tuple = line[ line.find('(') + 1 : end_point ]
 
     params = coords_tuple.split(',')
     assert len(params) == 2 or len(params) == 3
@@ -88,11 +110,19 @@ def get_coords(line, is_float):
         params = [ float(param) for param in params ]
     else:
         params = [ int(param) for param in params ]
-
-    return ( params , line.find(')') + 1, len(params) )
+    
+    return  tuple(params) , end_point + 1
 
 def get_params_coords(line, num_params, is_float):
-    param_coords_tuple = line[ line.find('(') + 1 : line.find(')') ]
+    """Get the next parameters in 'line' containing coordinates.
+
+    If 'num_params' = 1, then 'line' must start with "(var1, x,y,z)"
+    If 'num_params' = 2, then 'line' must start with "(var1, var2, x,y,z)" etc.
+
+    It also returns the string position at the end of the first parenthesis.
+    """
+    end_point = line.find(')')
+    param_coords_tuple = line[ line.find('(') + 1 : end_point ]
 
     params = param_coords_tuple.split(',')
     names = params[:num_params]
@@ -105,25 +135,32 @@ def get_params_coords(line, num_params, is_float):
     else:
         coords = [ int(coord.strip()) for coord in coords ]
 
-    params = names + coords
-    return ( params , line.find(')') + 1, len(coords) )
+    params = names
+    params.append(tuple(coords))
+    return ( params , end_point + 1 )
 
 def get_gang_info(line):
+    """Very specific function to get info from 'SET_GANG_INFO'. """
     param_tuple = line[ line.find('(') + 1 : line.find(')') ]
     params = param_tuple.split(',')
     assert len(params) == 12
     # cleaning
     params = [param.strip() for param in params]
     # SET_GANG_INFO (gang_name,remap, BASIC_WEAPON,ANGRY_WEAPON,HATE_WEAPON, arrow_colour,X,Y,Z, respect, MODEL,car_remap)
-    params[6] = float(params[6])
-    params[7] = float(params[7])
-    params[8] = float(params[8])
+    x = float(params[6])
+    y = float(params[7])
+    z = float(params[8])
 
-    return params
+    # format coordinates to tuple
+    formatted_params = params[:6]
+    formatted_params.append( ( x, y, z ) )
+    formatted_params += params[9:]
 
-def read_line(line, *args):
+    return formatted_params
+
+def read_line(line, *args) -> list:
+    """Read a command line string and return all parameters and opcodes from it as a list."""
     command = []
-    num_coords_array = []
     pointer = 0
     for arg in args:
 
@@ -142,11 +179,11 @@ def read_line(line, *args):
                 line = line[pointer:]
             
         elif arg == Cmd.EQUAL:
-            line = line.replace('=','')
-            #command.append('=')
+            line = line.replace('=','') # just remove the equal sign
+            
         elif arg == Cmd.PARAM_NUM or arg == Cmd.ROTATION or arg == Cmd.OPT_PARAM_NUM:
             number, pointer = get_next_numeric_param(line)
-            if number is not None:       # has command line finished?
+            if number is not None:       # if it got a number
                 command.append(number)
                 if pointer == -1:
                     break               # command line has finished with last param
@@ -162,41 +199,29 @@ def read_line(line, *args):
 
             if arg == Cmd.COORD_XYZ_U8 or arg == Cmd.COORD_XY_U8:
                 is_float = False
-            coords, pointer, num_coords = get_coords(line, is_float=is_float)
-            command.extend(coords)       # concatene lists
-            num_coords_array.append(num_coords)  # 2 or 3
+            coords, pointer = get_coords(line, is_float=is_float)
+            command.append(coords)      # note: always use "append" for "get_coords" just for ensure.
             line = line[pointer:]
 
-        #elif arg == Cmd.COORD_XY_F or arg == Cmd.COORD_XY_U8 or arg == Cmd.WIDTH_HEIGHT:
-        #    if arg == Cmd.COORD_XY_U8:
-        #        is_float = False
-        #    xy_coords, pointer = get_coords(line, is_float=is_float)
-        #    command.extend(xy_coords)       # concatene lists
-        #    line = line[pointer:]
-
         elif arg == Cmd.PARAM_XYZ_F or arg == Cmd.PARAM_XYZ_WH_F:
-            params, pointer, num_coords = get_params_coords(line, num_params=1, is_float=True)
+            params, pointer = get_params_coords(line, num_params=1, is_float=True)
             command.extend(params)
-            num_coords_array.append(num_coords)  # 3 or 5
             line = line[pointer:]
 
         elif arg == Cmd.TWO_PARAMS_XYZ_U8:
-            params, pointer, num_coords = get_params_coords(line, num_params=2, is_float=False)
+            params, pointer = get_params_coords(line, num_params=2, is_float=False)
             command.extend(params)
-            num_coords_array.append(num_coords)  # 3 or 5
             line = line[pointer:]
 
         elif arg == Cmd.GANG_INFO:
             params = get_gang_info(line)
             command.extend(params)
-            num_coords_array.append(3)  # always xyz
             break
 
         elif arg == Cmd.PARAM_XYZ_F_OR_VAR:
             try:
-                params, pointer, num_coords = get_params_coords(line, num_params=1, is_float=True)
+                params, pointer = get_params_coords(line, num_params=1, is_float=True)
                 command.extend(params)
-                num_coords_array.append(num_coords)
             except AssertionError:
                 name, pointer = get_var_name(line)
                 command.extend(name)
@@ -205,28 +230,20 @@ def read_line(line, *args):
 
         elif arg == Cmd.COORD_XYZ_F_OR_VAR:
             try:
-                params, pointer, num_coords = get_coords(line, is_float=True)
-                command.extend(params)
-                num_coords_array.append(num_coords)
+                params, pointer = get_coords(line, is_float=True)
+                command.append(params)
             except AssertionError:
                 name, pointer = get_var_name(line)
                 command.extend(name)
             finally:
                 line = line[pointer:]
 
-
-        #elif arg == Cmd.OPTIONAL_PARAM_ENUM:        # TODO: merge with the first if?
-        #    param, pointer = get_next_name(line)
-        #    if param:
-        #        command.extend(params)
-        #        line = line[pointer:]
-
     # remove whitespaces
     for i, param in enumerate(command):
         if type(param) == str:
             command[i] = param.strip()
 
-    return command, num_coords_array
+    return command
 
 def get_comment(line):
     comment_pointer = line.find("//")
@@ -285,8 +302,8 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
     elif "OBJ_DATA" in line_uppercase:
         # OBJ_DATA obj4 = (120.50, 120.50, 3.00) 0 TUNNEL_BLOCKER
         # OBJ_DATA shop1 = (6.50, 181.50, 2.00) 0 CAR_SHOP MACHINEGUN_SHOP
-        cmd, num_coords = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
-        if len(num_coords): # if not just declaring var
+        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
+        if len(cmd[2]): # if not just declaring var
             # xyz/xy
             print(cmd)
         return new_line
@@ -294,8 +311,8 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
     elif "CAR_DATA" in line_uppercase:      # TODO: merge with OBJ_DATA
         # CAR_DATA name = (X,Y) remap rotation MODEL
         # CAR_DATA name = (X,Y,Z) remap rotation MODEL TRAILERMODEL
-        cmd, num_coords = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
-        if len(num_coords): # if not just declaring var
+        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
+        if len(cmd[2]): # if not just declaring var
             # xyz/xy
             print(cmd)
         return new_line
@@ -304,7 +321,7 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         # auto9 = CREATE_CAR (231.50, 90.50, 2.00) 0 90 TANK END
         # name = CREATE_CAR (X,Y) remap rotation MODEL TRAILERMODEL END
         cmd = read_line(line, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.COORD_XYZ_F, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
-        if cmd[-1] == "END":
+        if cmd[-1].upper() == "END":
             cmd.pop()
 
         # xyz/xy
@@ -394,8 +411,7 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
         cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_XYZ_F_OR_VAR)
         print(cmd)
         # xyz
-        #new_line = "PLAYER_PED {} = ({}, {}, {}) {} {}".format(cmd[1], cmd[2], cmd[3], cmd[4], cmd[5], cmd[6])
-        #print(new_line)
+        
         return new_line
     
     elif ("EXPLODE" in line_uppercase
