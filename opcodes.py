@@ -1,6 +1,7 @@
 from enum import Enum, auto
+import sys
 
-# TODO: sort them by most likely to appear to lesser
+# TODO: sort them by most likely to appear to the lesser
 # declare / create opcodes
 DEC_OPCODES_LIST = ["PLAYER_PED", "PARKED_CAR_DATA", "RADIO_STATION", "CONVEYOR", "GENERATOR", "LIGHT", 
             "DESTRUCTOR", "CRANE_DATA", "DECLARE_CRANE_POWERUP", "OBJ_DATA", "CAR_DATA", "CHAR_DATA", 
@@ -612,6 +613,69 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
 #line = "EXPLODE_LARGE (143.5, 151.5, 2.0)"
 #line = "EXPLODE_WALL (143.5, 151.5, 2.0) TOP"
 #line = "SET_CHAR_OBJECTIVE (name, FOLLOW_CAR_ON_FOOT_WITH_OFFSET, second_item, 180, 1.5)"
-line = "SET_CHAR_OBJECTIVE (charname, objective type, 151.5, 85.5, 2.0)"
+#line = "SET_CHAR_OBJECTIVE (charname, objective type, 151.5, 85.5, 2.0)"
 
-rotate_exec_opcode(line, 0)
+#rotate_exec_opcode(line, 0)
+
+
+line1 = " WHILE_EXEC ( NOT ( LOCATE_CHARACTER_ON_FOOT(p1, 159.50, 5.50, 2.00, 1.00, 1.00) ) )"
+
+line2 = "IF ( ( ( IS_CAR_IN_BLOCK(r_m_3_tank_car, 235.50, 117.50, 2.00, 1.00, 1.00) )"
+line3 = "OR ( IS_CAR_IN_BLOCK(r_m_3_tank_car, 236.50, 117.50, 2.00, 1.00, 1.00) ) )"
+
+line4 = "IF ( ( ( IS_CAR_IN_BLOCK(r_m_3_tank_car, 235.50, 117.50, 2.00, 1.00, 1.00) ) OR ( IS_CAR_IN_BLOCK(r_m_3_tank_car, 236.50, 117.50, 2.00, 1.00, 1.00) ) ) AND ( r_m_3_cop_level_6_changed = 0 ) ) "
+
+def get_boolean_command_from_line(line: str, opcode: str, offset: int | None = 0):
+    """Get the next boolean opcode in 'line'.
+    TODO: explain more
+    """
+    line_to_parse = line[offset:]
+    if opcode in line_to_parse:
+        opcode_str_pos = line_to_parse.find(opcode)
+
+        # cut the left part
+        left_part = line_to_parse[ : opcode_str_pos ]
+        cmd_line = line_to_parse[ opcode_str_pos : ]  
+
+        # cut the right part
+        end_pos = cmd_line.find(')')
+        right_part = cmd_line[ end_pos + 1 : ]
+        cmd_line = cmd_line[ : end_pos + 1 ]
+        
+        return line[:offset] + left_part, cmd_line, right_part
+    else:
+        print(f"ERROR! Opcode not found in string: {line}")
+        sys.exit(-1)
+
+#results = get_boolean_command_from_line(line4, "IS_CAR_IN_BLOCK")
+#for result in results:
+#    print(result)
+
+def get_bool_opcodes_from_line(line):
+    opcodes_list = []
+    pointer = 0
+    while pointer != -1:
+        name, pointer = get_next_name(line)
+        if pointer != -1:
+            line = line[pointer:]
+            name = name.upper()
+            if name in BOOL_OPCODES_LIST:
+                opcodes_list.append(name)
+    return opcodes_list
+
+#print(get_bool_opcodes_from_line(line4))
+
+def protoype_test(line):
+    opcodes_in_line = get_bool_opcodes_from_line(line)      # EX:  ["IS_CAR_IN_BLOCK", "IS_CAR_IN_BLOCK", "LOCATE_CHAR_ANY_MEANS"]
+    #result = line
+    offset = 0
+    for opcode in opcodes_in_line:
+        left, cmd, right = get_boolean_command_from_line(line, opcode, offset)
+        # cmd = rotate_bool_opcode(cmd, rotation)
+        line = left + cmd + right
+        offset += len(left) + len(cmd)
+    return line
+
+
+print(protoype_test(line4))
+
