@@ -5,17 +5,25 @@ from enum import Enum, auto
 DEC_OPCODES_LIST = ["PLAYER_PED", "PARKED_CAR_DATA", "RADIO_STATION", "CONVEYOR", "GENERATOR", "LIGHT", 
             "DESTRUCTOR", "CRANE_DATA", "DECLARE_CRANE_POWERUP", "OBJ_DATA", "CAR_DATA", "CHAR_DATA", 
             "CREATE_OBJ", "CREATE_CAR", "CREATE_SOUND", "CREATE_CHAR", "CREATE_LIGHT", "SET_GANG_INFO", 
-            "CREATE_GANG_CAR"]
+            "CREATE_GANG_CAR", "DOOR_DATA", "SOUND", "CRUSHER"]
+
+# TODO: "SOUND", "CRUSHER"
 
 # execution opcodes
 EXEC_OPCODES_LIST = ["POINT_ARROW_AT", "LEVEL_END_POINT_ARROW_AT", "EXPLODE", "EXPLODE_NO_RING", 
-                    "EXPLODE_LARGE", "EXPLODE_SMALL", "EXPLODE_WALL", "SET_CHAR_OBJECTIVE"]
+                    "EXPLODE_LARGE", "EXPLODE_SMALL", "EXPLODE_WALL", "SET_CHAR_OBJECTIVE", 
+                    "ADD_PATROL_POINT", "REMOVE_BLOCK", "ADD_NEW_BLOCK", "CHANGE_BLOCK", "SWITCH_ROAD",
+                    "WARP_FROM_CAR_TO_POINT", "PERFORM_SAVE_GAME", "SET_DIR_OF_TV_VANS", "LOWER_LEVEL",
+                    "THREAD_TRIGGER"]
+
+# TODO: "ADD_PATROL_POINT", "REMOVE_BLOCK", "ADD_NEW_BLOCK", "CHANGE_BLOCK", "SWITCH_ROAD",
+#       "WARP_FROM_CAR_TO_POINT", "PERFORM_SAVE_GAME", "SET_DIR_OF_TV_VANS", "LOWER_LEVEL", "THREAD_TRIGGER"
 
 # boolean opcodes
 BOOL_OPCODES_LIST = ["IS_CAR_IN_BLOCK", "CHECK_CAR_WRECKED_IN_AREA", "LOCATE_CHARACTER_ANY_MEANS", 
                      "LOCATE_CHARACTER_ON_FOOT", "LOCATE_CHARACTER_BY_CAR", 
                      "LOCATE_STOPPED_CHARACTER_ANY_MEANS", "LOCATE_STOPPED_CHARACTER_ON_FOOT", 
-                     "LOCATE_STOPPED_CHARACTER_BY_CAR"]
+                     "LOCATE_STOPPED_CHARACTER_BY_CAR", "IS_CHAR_FIRING_IN_AREA", "IS_POINT_ONSCREEN"]
 
 class Cmd(Enum):
     OPCODE = auto()
@@ -39,8 +47,11 @@ class Cmd(Enum):
     PARAM_XYZ_F_OR_VAR = auto()
     COORD_XYZ_F_OR_VAR = auto()
     OPT_PARAM_ENUM_OR_NUM = auto()
-    PARAM_FLOAT = auto()                # TODO
-    RGB = auto()                        # TODO
+    PARAM_FLOAT = auto()
+    RGB = auto()
+    TWO_PARAMS_XYZ_F = auto()
+    COORD_XYZ_WH_F = auto()
+
 
 def is_dec_opcode_rotatable(line):
     for opcode in DEC_OPCODES_LIST:
@@ -150,7 +161,8 @@ def get_coords(line, is_float: bool) -> tuple[tuple, int]:
 def get_params_coords(line, num_params, is_float):
     """Get the next parameters in 'line' containing coordinates.
 
-    If 'num_params' = 1, then 'line' must start with "(var1, x,y,z)"
+    If 'num_params' = 0, then 'line' must start with "(x,y,z)" or "(x,y,z, width, height)"
+    If 'num_params' = 1, then 'line' must start with "(var1, x,y,z)" or "(var1, x,y,z, width, height)"
     If 'num_params' = 2, then 'line' must start with "(var1, var2, x,y,z)" etc.
 
     It also returns the string position at the end of the first parenthesis.
@@ -159,8 +171,13 @@ def get_params_coords(line, num_params, is_float):
     param_coords_tuple = line[ line.find('(') + 1 : end_point ]
 
     params = param_coords_tuple.split(',')
-    names = params[:num_params]
-    coords = params[num_params:]
+
+    if num_params:  # 1 or more parameters
+        names = params[:num_params]
+        coords = params[num_params:]
+    else:           # coordinates only
+        names = []
+        coords = params
 
     assert len(coords) == 2 or len(coords) == 3 or len(coords) == 5
 
@@ -191,6 +208,20 @@ def get_gang_info(line):
     formatted_params += params[9:]
 
     return formatted_params
+
+def get_info_manually(line, integer_indexes: list | None = None):
+    """Get all parameters between parenthesis.
+    
+    If 'integer_indexes' is specified, then this function will convert each index to 'int' type.
+
+    It also returns the string position at the end of parenthesis.
+    """
+    end_point = line.find(')')
+    params = line[ line.find('(') + 1 : end_point ].split(',')
+    
+    # convert some params to int (if integer_indexes is specified)
+    params = [ int(param) if i in integer_indexes else param.strip() for i, param in enumerate(params) ]
+    return params, end_point + 1
 
 def read_line(line, *args) -> list:
     """Read a command line string and return all parameters and opcodes from it as a list.
@@ -244,15 +275,12 @@ def read_line(line, *args) -> list:
             command.extend(params)
             line = line[pointer:]
 
-        elif arg == Cmd.TWO_PARAMS_XYZ_U8:
-            params, pointer = get_params_coords(line, num_params=2, is_float=False)
+        elif arg == Cmd.TWO_PARAMS_XYZ_U8 or arg == Cmd.TWO_PARAMS_XYZ_F:
+            if arg == Cmd.TWO_PARAMS_XYZ_U8:
+                is_float = False
+            params, pointer = get_params_coords(line, num_params=2, is_float=is_float)
             command.extend(params)
             line = line[pointer:]
-
-        elif arg == Cmd.GANG_INFO:
-            params = get_gang_info(line)
-            command.extend(params)
-            break
 
         elif arg == Cmd.PARAM_XYZ_F_OR_VAR:
             try:
@@ -295,7 +323,17 @@ def read_line(line, *args) -> list:
                 line = line[pointer:]
             else:
                 break                   # command line has finished with no optional last param
+        
+        elif arg == Cmd.COORD_XYZ_WH_F:
+            coords, pointer = get_params_coords(line, num_params=0, is_float=True)
+            command.extend(coords)
+            line = line[pointer:]
 
+        elif arg == Cmd.GANG_INFO:
+            params = get_gang_info(line)
+            command.extend(params)
+            break
+        
         #elif arg == Cmd.RGB:
 
 
@@ -344,14 +382,13 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_NUM, Cmd.ROTATION)
         print(cmd)
         # xyz
-        #new_line = "PLAYER_PED {} = ({}, {}, {}) {} {}".format(cmd[1], cmd[2], cmd[3], cmd[4], cmd[5], cmd[6])
-        #print(new_line)
         return new_line
     
-    elif "PARKED_CAR_DATA" in line_uppercase:
+    elif ("PARKED_CAR_DATA" in line_uppercase       # TODO: simplify: just CAR_DATA
+        or "CAR_DATA" in line_uppercase):
         # PARKED_CAR_DATA auto14 = (38.50, 26.50, 255.00) 2 170 PICKUP
-        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_ENUM)
-
+        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
+        #     read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
         # xyz/xy
         print(cmd)
         return new_line
@@ -397,16 +434,17 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         print(cmd)
         return new_line
     
-    elif "CAR_DATA" in line_uppercase:      # TODO: merge with OBJ_DATA
-        # CAR_DATA name = (X,Y) remap rotation MODEL
-        # CAR_DATA name = (X,Y,Z) remap rotation MODEL TRAILERMODEL
-        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
-        if len(cmd) > 2: # if not just declaring var
-            # xyz/xy
-            print(cmd)
-        return new_line
+    #elif "CAR_DATA" in line_uppercase:      # TODO: merge with OBJ_DATA
+    #    # CAR_DATA name = (X,Y) remap rotation MODEL
+    #    # CAR_DATA name = (X,Y,Z) remap rotation MODEL TRAILERMODEL
+    #    cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
+    #    if len(cmd) > 2: # if not just declaring var
+    #        # xyz/xy
+    #        print(cmd)
+    #    return new_line
     
-    elif "CREATE_CAR" in line_uppercase or "CREATE_GANG_CAR" in line_uppercase:
+    elif ("CREATE_CAR" in line_uppercase 
+        or "CREATE_GANG_CAR" in line_uppercase):
         # auto9 = CREATE_CAR (231.50, 90.50, 2.00) 0 90 TANK END
         # name = CREATE_CAR (X,Y) remap rotation MODEL TRAILERMODEL END
         cmd = read_line(line, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.COORD_XYZ_F, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
@@ -464,6 +502,13 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_FLOAT, Cmd.PARAM_NUM, Cmd.RGB, Cmd.PARAM_NUM, Cmd.PARAM_NUM, Cmd.PARAM_NUM)
         print(cmd)
 
+    elif "DOOR_DATA" in line_uppercase:
+        # DOOR_DATA door2 = DOUBLE (179, 81, 2) (178.00, 82.50, 2.00, 3.00, 2.00) 
+        # BOTTOM 0 ANY_PLAYER_ONE_CAR CLOSE_WHEN_OPEN_RULE_FAILS 0 FLIP_RIGHT NOT_REVERSED
+        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.PARAM_ENUM, Cmd.COORD_XYZ_U8, Cmd.COORD_XYZ_WH_F,
+                        Cmd.PARAM_ENUM, Cmd.PARAM_NUM, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.PARAM_NUM, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM_OR_NUM)
+        print(cmd)
+
     elif "SET_GANG_INFO" in line_uppercase:
         # SET_GANG_INFO (redngang, 5, PISTOL, MACHINE_GUN, MOLOTOV, 4, 47.50, 49.50, 255.00, 1, PICKUP, 3)
         cmd = read_line(line, Cmd.OPCODE, Cmd.GANG_INFO)
@@ -494,9 +539,10 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
 #line = "l_e_1_molotov_1 = CREATE_OBJ (160.50, 11.50, 3.00) 0 COLLECT_04 10 END"
 #line = "l_e_1_guard_1 = CREATE_CHAR (157.50, 9.50, 3.00) 8 0 CRIMINAL END"
 #line = "LIGHT light1 = (182.50, 174.50, 2.00) 3.00 255 (98, 204, 140) 0 0 0"
-line = "r_h_2_prison_alarm_light_1 = CREATE_LIGHT (29.00, 241.00, 1.00) 7.99 255 (255, 0, 0) 30 100 5"
+#line = "r_h_2_prison_alarm_light_1 = CREATE_LIGHT (29.00, 241.00, 1.00) 7.99 255 (255, 0, 0) 30 100 5"
+#line = "DOOR_DATA door12 = DOUBLE (77, 200, 2) (76.00, 201.50, 2.00, 3.00, 2.00) BOTTOM 0 ANY_PLAYER_ONE_CAR CLOSE_WHEN_OPEN_RULE_FAILS 0 FLIP_RIGHT NOT_REVERSED"
 
-rotate_dec_opcode(line, 0)
+#rotate_dec_opcode(line, 0)
 
 
 def rotate_exec_opcode(line: str, rotation_angle: int):
@@ -540,13 +586,32 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
         print(cmd)
         return new_line
 
+    elif "SET_CHAR_OBJECTIVE" in line_uppercase:
+        # SET_CHAR_OBJECTIVE (charname, objective type)
+        # SET_CHAR_OBJECTIVE (charname, objective type, second_item)
+        # SET_CHAR_OBJECTIVE (charname, objective type, X,Y,Z)
+        # SET_CHAR_OBJECTIVE (name, FOLLOW_CAR_ON_FOOT_WITH_OFFSET, second_item, rotation, distance)
+
+        # filter the cases in which there are rotation or coordinates
+        params = line[ line.find('(') : line.find(')') + 1 ].split(',')
+        if len(params) == 5:
+            if "FOLLOW_CAR_ON_FOOT_WITH_OFFSET" in line:
+                cmd = read_line(line, Cmd.OPCODE)
+                params, pointer = get_info_manually(line, [3])
+                cmd.extend(params)
+            else:
+                cmd = read_line(line, Cmd.OPCODE, Cmd.TWO_PARAMS_XYZ_F)
+            print(cmd)
+        pass
+
 
 
 
 #line = "POINT_ARROW_AT (arrow1, auto1)"
-line = "POINT_ARROW_AT (arrow1, 43.50, 249.50, 2.00)"
-
+#line = "POINT_ARROW_AT (arrow1, 43.50, 249.50, 2.00)"
 #line = "EXPLODE_LARGE (143.5, 151.5, 2.0)"
 #line = "EXPLODE_WALL (143.5, 151.5, 2.0) TOP"
+#line = "SET_CHAR_OBJECTIVE (name, FOLLOW_CAR_ON_FOOT_WITH_OFFSET, second_item, 180, 1.5)"
+line = "SET_CHAR_OBJECTIVE (charname, objective type, 151.5, 85.5, 2.0)"
 
 rotate_exec_opcode(line, 0)
