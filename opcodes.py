@@ -3,28 +3,28 @@ import sys
 
 # TODO: sort them by most likely to appear to the lesser
 # declare / create opcodes
-DEC_OPCODES_LIST = ["PLAYER_PED", "PARKED_CAR_DATA", "RADIO_STATION", "CONVEYOR", "GENERATOR", "LIGHT", 
-            "DESTRUCTOR", "CRANE_DATA", "DECLARE_CRANE_POWERUP", "OBJ_DATA", "CAR_DATA", "CHAR_DATA", 
-            "CREATE_OBJ", "CREATE_CAR", "CREATE_SOUND", "CREATE_CHAR", "CREATE_LIGHT", "SET_GANG_INFO", 
-            "CREATE_GANG_CAR", "DOOR_DATA", "SOUND", "CRUSHER"]
-
-# TODO: "SOUND", "CRUSHER"
+DEC_OPCODES_LIST = ["OBJ_DATA", "GENERATOR", "CHAR_DATA", "CREATE_CHAR", "PARKED_CAR_DATA",
+                    "CAR_DATA", "THREAD_WAIT_FOR_CHAR_IN_AREA", "LIGHT", "CRANE_DATA", "CREATE_OBJ", 
+                     "CREATE_CAR", "CREATE_SOUND", "CREATE_LIGHT", "CREATE_GANG_CAR", "DOOR_DATA", 
+                    "SOUND", "DECLARE_CRANE_POWERUP", "CRUSHER", "DESTRUCTOR", "SET_GANG_INFO", 
+                    "RADIO_STATION", "CONVEYOR", "PLAYER_PED", "THREAD_WAIT_FOR_CHAR_IN_BLOCK"
+                    ]
 
 # execution opcodes
-EXEC_OPCODES_LIST = ["POINT_ARROW_AT", "LEVEL_END_POINT_ARROW_AT", "EXPLODE", "EXPLODE_NO_RING", 
-                    "EXPLODE_LARGE", "EXPLODE_SMALL", "EXPLODE_WALL", "SET_CHAR_OBJECTIVE", 
-                    "ADD_PATROL_POINT", "REMOVE_BLOCK", "ADD_NEW_BLOCK", "CHANGE_BLOCK", "SWITCH_ROAD",
-                    "WARP_FROM_CAR_TO_POINT", "PERFORM_SAVE_GAME", "SET_DIR_OF_TV_VANS", "LOWER_LEVEL",
-                    "THREAD_TRIGGER"]
+EXEC_OPCODES_LIST = ["POINT_ARROW_AT", "SET_CHAR_OBJECTIVE", "CHANGE_BLOCK", "REMOVE_BLOCK", 
+                     "ADD_PATROL_POINT", "EXPLODE_NO_RING", "EXPLODE_LARGE", "EXPLODE_SMALL", 
+                     "EXPLODE_WALL", "EXPLODE", "ADD_NEW_BLOCK", "WARP_FROM_CAR_TO_POINT", 
+                    "LOWER_LEVEL", "SET_DIR_OF_TV_VANS", "PERFORM_SAVE_GAME", "SWITCH_ROAD"
+                    ]
 
-# TODO: "ADD_PATROL_POINT", "REMOVE_BLOCK", "ADD_NEW_BLOCK", "CHANGE_BLOCK", "SWITCH_ROAD",
-#       "WARP_FROM_CAR_TO_POINT", "PERFORM_SAVE_GAME", "SET_DIR_OF_TV_VANS", "LOWER_LEVEL", "THREAD_TRIGGER"
+# TODO: "WARP_FROM_CAR_TO_POINT", "PERFORM_SAVE_GAME", "SET_DIR_OF_TV_VANS", "LOWER_LEVEL"
 
 # boolean opcodes
-BOOL_OPCODES_LIST = ["IS_CAR_IN_BLOCK", "CHECK_CAR_WRECKED_IN_AREA", "LOCATE_CHARACTER_ANY_MEANS", 
-                     "LOCATE_CHARACTER_ON_FOOT", "LOCATE_CHARACTER_BY_CAR", 
+BOOL_OPCODES_LIST = ["IS_CAR_IN_BLOCK", "LOCATE_CHARACTER_ANY_MEANS", "LOCATE_CHARACTER_BY_CAR", 
+                     "LOCATE_CHARACTER_ON_FOOT", "IS_POINT_ONSCREEN", "CHECK_CAR_WRECKED_IN_AREA", 
                      "LOCATE_STOPPED_CHARACTER_ANY_MEANS", "LOCATE_STOPPED_CHARACTER_ON_FOOT", 
-                     "LOCATE_STOPPED_CHARACTER_BY_CAR", "IS_CHAR_FIRING_IN_AREA", "IS_POINT_ONSCREEN"]
+                     "LOCATE_STOPPED_CHARACTER_BY_CAR", "IS_CHAR_FIRING_IN_AREA"
+                     ]
 
 class Cmd(Enum):
     OPCODE = auto()
@@ -52,6 +52,8 @@ class Cmd(Enum):
     RGB = auto()
     TWO_PARAMS_XYZ_F = auto()
     COORD_XYZ_WH_F = auto()
+    THREAD_AREA_TYPE = auto()
+    THREAD_BLOCK_TYPE = auto()
 
 
 def is_dec_opcode_rotatable(line):
@@ -210,10 +212,12 @@ def get_gang_info(line):
 
     return formatted_params
 
-def get_info_manually(line, integer_indexes: list | None = None):
+def get_info_manually(line, integer_indexes: list | None = [], float_indexes: list | None = []):
     """Get all parameters between parenthesis.
     
     If 'integer_indexes' is specified, then this function will convert each index to 'int' type.
+
+    Analogously for 'float_indexes'.
 
     It also returns the string position at the end of parenthesis.
     """
@@ -221,7 +225,10 @@ def get_info_manually(line, integer_indexes: list | None = None):
     params = line[ line.find('(') + 1 : end_point ].split(',')
     
     # convert some params to int (if integer_indexes is specified)
-    params = [ int(param) if i in integer_indexes else param.strip() for i, param in enumerate(params) ]
+    params = [ int(param) if i in integer_indexes else param for i, param in enumerate(params) ]
+    # convert some params to float (if float_indexes is specified)
+    params = [ float(param) if i in float_indexes else param for i, param in enumerate(params) ]
+
     return params, end_point + 1
 
 def read_line(line, *args) -> list:
@@ -328,6 +335,18 @@ def read_line(line, *args) -> list:
         elif arg == Cmd.COORD_XYZ_WH_F:
             coords, pointer = get_params_coords(line, num_params=0, is_float=True)
             command.extend(coords)
+            line = line[pointer:]
+
+        elif arg == Cmd.THREAD_AREA_TYPE:
+            raw_params, pointer = get_info_manually(line, float_indexes=[1,2,3,4,5])
+            params = [raw_params[0]] + [tuple(raw_params[1:6])] + raw_params[6:]
+            command.extend(params)
+            line = line[pointer:]
+
+        elif arg == Cmd.THREAD_BLOCK_TYPE:
+            raw_params, pointer = get_info_manually(line, float_indexes=[1,2,3])
+            params = [raw_params[0]] + [tuple(raw_params[1:4])] + raw_params[4:]
+            command.extend(params)
             line = line[pointer:]
 
         elif arg == Cmd.GANG_INFO:
@@ -460,6 +479,11 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         cmd = read_line(line, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.COORD_XYZ_F, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM)
         print(cmd)
 
+    elif "SOUND" in line_uppercase:
+        # SOUND sound1 = (155.50, 139.50, 6.00) CHURCH_SINGING PLAY_FOREVER
+        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM)
+        print(cmd)
+
     elif "RADIO_STATION" in line_uppercase:
         # RADIO_STATION radio1 = STATION_ZAIBATSU (247.50, 67.50)
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.PARAM_ENUM, Cmd.COORD_XY_F)
@@ -516,34 +540,64 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
 
         # xyz
         print(cmd)
+
+    elif "CRUSHER" in line_uppercase:
+        # CRUSHER crusher1 = (244.50, 243.50)
+        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XY_F)
+
+        # xy
+        print(cmd)
+
+    elif "THREAD_WAIT_FOR_CHAR_IN_AREA" in line_uppercase:  # and "THREAD_WAIT_FOR_CHAR_IN_AREA_ANY_MEANS"
+        # THREAD_TRIGGER thr_kill_frenzy_6 = THREAD_WAIT_FOR_CHAR_IN_AREA (p1, 112.50, 241.50, 2.00, 0.50, 0.50, do_kill_frenzy_6:)
+        # THREAD_TRIGGER thr_kill_frenzy_6 = THREAD_WAIT_FOR_CHAR_IN_AREA_ANY_MEANS (p1, 112.50, 241.50, 2.00, 0.50, 0.50, do_kill_frenzy_6:)
+        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.THREAD_AREA_TYPE)
+        print(cmd)
+
+    elif "THREAD_WAIT_FOR_CHAR_IN_BLOCK" in line_uppercase:
+        # THREAD_TRIGGER test1 = THREAD_WAIT_FOR_CHAR_IN_BLOCK (p1, 112.50, 241.50, 2.00, do_something:)
+        cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.THREAD_BLOCK_TYPE)
+        print(cmd)
+
     return
 
+lines = [
+"PLAYER_PED p1 = (97.50, 73.50, 2.00) 5 1",
+"PARKED_CAR_DATA auto14 = (38.50, 26.50, 255.00) 2 170 PICKUP",
+"OBJ_DATA obj4 = (120.50, 120.50, 3.00) 0 COLLECT_05",
+"OBJ_DATA shop1 = (6.50, 181.50, 2.00) 0 CAR_SHOP MACHINEGUN_SHOP",
+"OBJ_DATA obj1",
+"CRANE_DATA crane1 = (4.50, 72.50) 200 NO_HOMECRANE FIRST (5.50, 75.50) 180",
+"CRANE_DATA crane4 = (238.50, 64.50) 320 crane3 SECOND (235.50, 64.50) 180",
+"CRANE_DATA crane7 = (250.50, 39.50) 90 NO_HOMECRANE",
+"auto9 = CREATE_CAR (231.50, 90.50, 2.00) 0 90 TANK END",
+"auto9 = CREATE_CAR (231.50, 90.50, 2.00) 0 90 TANK TRNKTRAIL END",
+"sound28 = CREATE_SOUND (113.50, 123.50, 2.00) CHURCH_SINGING PLAY_FOREVER END",
+"RADIO_STATION radio1 = STATION_ZAIBATSU (247.50, 67.50)",
+"DECLARE_CRANE_POWERUP (crane6, gen3, 197, 221, 3)",
+"CONVEYOR conv1 = (9.50, 77.50, 3.00) (1.00, 13.00) 0 1",
+"GENERATOR gen1 = (4.50, 83.50, 3.00) 0 MOVING_COLLECT_01 80 80",
+"GENERATOR molotova2 = ( 142.5 , 133.5 , 5.0 ) 0 COLLECT_04 1800 1800 20 ",
+"DESTRUCTOR des1 = (9.50, 83.50, 3.00) (1.00, 1.00)",
+"SET_GANG_INFO (sciegang, 7, PISTOL, MACHINE_GUN, FLAME_THROWER, 5, 211.50, 219.50, 255.00, 1, STRATOSB, 10)",
+"r_e_1_pickup_car = CREATE_GANG_CAR (24.00, 41.50, 2.00) 3 90 PICKUP END",
+"l_e_1_molotov_1 = CREATE_OBJ (160.50, 11.50, 3.00) 0 COLLECT_04 10 END",
+"l_e_1_guard_1 = CREATE_CHAR (157.50, 9.50, 3.00) 8 0 CRIMINAL END",
+"LIGHT light1 = (182.50, 174.50, 2.00) 3.00 255 (98, 204, 140) 0 0 0",
+"r_h_2_prison_alarm_light_1 = CREATE_LIGHT (29.00, 241.00, 1.00) 7.99 255 (255, 0, 0) 30 100 5",
+"DOOR_DATA door12 = DOUBLE (77, 200, 2) (76.00, 201.50, 2.00, 3.00, 2.00) BOTTOM 0 ANY_PLAYER_ONE_CAR CLOSE_WHEN_OPEN_RULE_FAILS 0 FLIP_RIGHT NOT_REVERSED",
+"CRUSHER crusher1 = (244.50, 243.50)",
+"SOUND sound1 = (155.50, 139.50, 6.00) CHURCH_SINGING PLAY_FOREVER",
+"THREAD_TRIGGER thr_kill_frenzy_6 = THREAD_WAIT_FOR_CHAR_IN_AREA (p1, 112.50, 241.50, 2.00, 0.50, 0.50, do_kill_frenzy_6:)",
+"THREAD_TRIGGER thr_kill_frenzy_6 = THREAD_WAIT_FOR_CHAR_IN_AREA_ANY_MEANS (p1, 112.50, 241.50, 2.00, 0.50, 0.50, do_kill_frenzy_6:)",
+"THREAD_TRIGGER test1 = THREAD_WAIT_FOR_CHAR_IN_BLOCK (p1, 112.50, 241.50, 2.00, do_something:)",
+]
 
-#line = "PLAYER_PED p1 = (97.50, 73.50, 2.00) 5 1"
-#line = "PARKED_CAR_DATA auto14 = (38.50, 26.50, 255.00) 2 170 PICKUP"
-#line = "OBJ_DATA obj4 = (120.50, 120.50, 3.00) 0 COLLECT_05"
-#line = "OBJ_DATA shop1 = (6.50, 181.50, 2.00) 0 CAR_SHOP MACHINEGUN_SHOP"
-#line = "OBJ_DATA obj1"
-#line = "CRANE_DATA crane1 = (4.50, 72.50) 200 NO_HOMECRANE FIRST (5.50, 75.50) 180"
-#line = "CRANE_DATA crane4 = (238.50, 64.50) 320 crane3 SECOND (235.50, 64.50) 180"
-#line = "CRANE_DATA crane7 = (250.50, 39.50) 90 NO_HOMECRANE"
-#line = "auto9 = CREATE_CAR (231.50, 90.50, 2.00) 0 90 TANK END"
-#line = "auto9 = CREATE_CAR (231.50, 90.50, 2.00) 0 90 TANK TRNKTRAIL END"
-#line = "sound28 = CREATE_SOUND (113.50, 123.50, 2.00) CHURCH_SINGING PLAY_FOREVER END"
-#line = "RADIO_STATION radio1 = STATION_ZAIBATSU (247.50, 67.50)"
-#line = "DECLARE_CRANE_POWERUP (crane6, gen3, 197, 221, 3)"
-#line = "CONVEYOR conv1 = (9.50, 77.50, 3.00) (1.00, 13.00) 0 1"
-#line = "GENERATOR gen1 = (4.50, 83.50, 3.00) 0 MOVING_COLLECT_01 80 80"
-#line = "DESTRUCTOR des1 = (9.50, 83.50, 3.00) (1.00, 1.00)"
-#line = "SET_GANG_INFO (sciegang, 7, PISTOL, MACHINE_GUN, FLAME_THROWER, 5, 211.50, 219.50, 255.00, 1, STRATOSB, 10)"
-#line = "r_e_1_pickup_car = CREATE_GANG_CAR (24.00, 41.50, 2.00) 3 90 PICKUP END"
-#line = "l_e_1_molotov_1 = CREATE_OBJ (160.50, 11.50, 3.00) 0 COLLECT_04 10 END"
-#line = "l_e_1_guard_1 = CREATE_CHAR (157.50, 9.50, 3.00) 8 0 CRIMINAL END"
-#line = "LIGHT light1 = (182.50, 174.50, 2.00) 3.00 255 (98, 204, 140) 0 0 0"
-#line = "r_h_2_prison_alarm_light_1 = CREATE_LIGHT (29.00, 241.00, 1.00) 7.99 255 (255, 0, 0) 30 100 5"
-#line = "DOOR_DATA door12 = DOUBLE (77, 200, 2) (76.00, 201.50, 2.00, 3.00, 2.00) BOTTOM 0 ANY_PLAYER_ONE_CAR CLOSE_WHEN_OPEN_RULE_FAILS 0 FLIP_RIGHT NOT_REVERSED"
+#line_1 = "SOUND sound1 = (155.50, 139.50, 6.00) CHURCH_SINGING PLAY_FOREVER"
+#rotate_dec_opcode(line_1, 0)
 
-#rotate_dec_opcode(line, 0)
+#for line in lines:
+#    rotate_dec_opcode(line, 0)
 
 
 def rotate_exec_opcode(line: str, rotation_angle: int):
@@ -590,30 +644,70 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
     elif "SET_CHAR_OBJECTIVE" in line_uppercase:
         # SET_CHAR_OBJECTIVE (charname, objective type)
         # SET_CHAR_OBJECTIVE (charname, objective type, second_item)
-        # SET_CHAR_OBJECTIVE (charname, objective type, X,Y,Z)
-        # SET_CHAR_OBJECTIVE (name, FOLLOW_CAR_ON_FOOT_WITH_OFFSET, second_item, rotation, distance)
+        # SET_CHAR_OBJECTIVE (m_5_chr1, GOTO_AREA_ON_FOOT, 17.50, 200.50, 2.00)
+        # SET_CHAR_OBJECTIVE (m_13_chr2, FOLLOW_CAR_ON_FOOT_WITH_OFFSET, m_13_auto1, 90, 1.00)
 
         # filter the cases in which there are rotation or coordinates
         params = line[ line.find('(') : line.find(')') + 1 ].split(',')
         if len(params) == 5:
             if "FOLLOW_CAR_ON_FOOT_WITH_OFFSET" in line:
                 cmd = read_line(line, Cmd.OPCODE)
-                params, pointer = get_info_manually(line, [3])
+                params, pointer = get_info_manually(line, integer_indexes=[3], float_indexes=[4])
                 cmd.extend(params)
             else:
                 cmd = read_line(line, Cmd.OPCODE, Cmd.TWO_PARAMS_XYZ_F)
             print(cmd)
-        pass
+
+    elif "ADD_PATROL_POINT" in line_uppercase:
+        cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_XYZ_F)
+        print(cmd)
+
+    elif "REMOVE_BLOCK" in line_uppercase:
+        cmd = read_line(line, Cmd.OPCODE)
+        params, pointer = get_info_manually(line, integer_indexes=[0,1,2])
+        cmd.append( tuple(params[0:3]) )
+        cmd.append(params[-1])
+        print(cmd)
+
+    elif "ADD_NEW_BLOCK" in line_uppercase:
+        cmd = read_line(line, Cmd.OPCODE, Cmd.COORD_XYZ_U8)
+        print(cmd)
+
+    elif "CHANGE_BLOCK" in line_uppercase:
+        if "SIDE" in line_uppercase:
+            cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_ENUM, Cmd.COORD_XYZ_U8, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.ROTATION, Cmd.PARAM_NUM)
+            print(cmd)
+        elif "LID" in line_uppercase:
+            cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_ENUM, Cmd.COORD_XYZ_U8, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_NUM)
+            print(cmd)
+
+    elif "SWITCH_ROAD" in line_uppercase:
+        cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_ENUM, Cmd.COORD_XYZ_U8)
+
+        # xyz
+        print(cmd)
+        return new_line
 
 
 
+lines2 = [
+    "POINT_ARROW_AT (arrow1, auto1)", 
+    "POINT_ARROW_AT (arrow1, 43.50, 249.50, 2.00)",
+    "EXPLODE_LARGE (143.5, 151.5, 2.0)",
+    "EXPLODE_LARGE (car8)",
+    "EXPLODE_WALL (143.5, 151.5, 2.0) TOP",
+    "SET_CHAR_OBJECTIVE (m_13_chr2, FOLLOW_CAR_ON_FOOT_WITH_OFFSET, m_13_auto1, 90, 1.00)",
+    "SET_CHAR_OBJECTIVE (m_5_chr1, GOTO_AREA_ON_FOOT, 17.50, 200.50, 2.00)",
+    "SWITCH_ROAD ON (255,106,2)",
+    "CHANGE_BLOCK SIDE (200, 125, 2) BOTTOM NOT_WALL NOT_BULLET NOT_FLAT NOT_FLIP 0 791",
+    "CHANGE_BLOCK LID (179, 228, 1) NOT_FLAT NOT_FLIP 0 0 978",
+    "ADD_NEW_BLOCK (180, 232, 1)",
+    "REMOVE_BLOCK (177, 229, 1, DONT_DROP)",
+    "ADD_PATROL_POINT (z_e_1_srs_guard, 175.50, 230.50, 2.00)",
+]
 
-#line = "POINT_ARROW_AT (arrow1, auto1)"
-#line = "POINT_ARROW_AT (arrow1, 43.50, 249.50, 2.00)"
-#line = "EXPLODE_LARGE (143.5, 151.5, 2.0)"
-#line = "EXPLODE_WALL (143.5, 151.5, 2.0) TOP"
-#line = "SET_CHAR_OBJECTIVE (name, FOLLOW_CAR_ON_FOOT_WITH_OFFSET, second_item, 180, 1.5)"
-#line = "SET_CHAR_OBJECTIVE (charname, objective type, 151.5, 85.5, 2.0)"
+for line in lines2:
+    rotate_exec_opcode(line, 0)
 
 #rotate_exec_opcode(line, 0)
 
@@ -677,5 +771,5 @@ def protoype_test(line):
     return line
 
 
-print(protoype_test(line4))
+#print(protoype_test(line4))
 
