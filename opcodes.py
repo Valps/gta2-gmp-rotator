@@ -80,8 +80,10 @@ def rotate_tuple(coords: tuple, rotation_angle: int) -> tuple:
             coords_list[3], coords_list[4] = coords_list[4], coords_list[3]
     return tuple(coords_list)
 
-def rotate_params(cmd: list, rotation_angle: int, rotation_param_indexes: list[int] | None = [], width_height_tuple_indexes: list[int] | None = []):
+def rotate_params(cmd: list, rotation_angle: int, rotation_param_indexes: list[int] | None = [], width_height_tuple_indexes: list[int] | None = [], blacklist_indexes: list[int] | None = []):
     for i, param in enumerate(cmd):
+        if i in blacklist_indexes:
+            continue
         if i in rotation_param_indexes:
             # rotate rotation parameter
             assert type(param) == int
@@ -92,8 +94,10 @@ def rotate_params(cmd: list, rotation_angle: int, rotation_param_indexes: list[i
         elif type(param) == tuple:
             # rotate position coordinates
             if i not in width_height_tuple_indexes:
+                # xyz coordinates
                 cmd[i] = rotate_tuple(param, rotation_angle)
             else:
+                # width height
                 assert len(param) == 2
                 # swap width and height if rot_ang = 90 or 270
                 if rotation_angle == 90 or rotation_angle == 270:
@@ -645,18 +649,27 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
     elif "DESTRUCTOR" in line_uppercase:
         # DESTRUCTOR des1 = (9.50, 83.50, 3.00) (1.00, 1.00)
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.WIDTH_HEIGHT)
+        cmd_rot = rotate_params(cmd, rotation_angle, width_height_tuple_indexes=[3])
 
-        # xyz
+        if len(cmd_rot[2]) == 3:
+            new_line = "{} {} = ({:.2f}, {:.2f}, {:.2f}) ({:.2f}, {:.2f})".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3][0], cmd_rot[3][1])
+        else:
+            new_line = "{} {} = ({:.2f}, {:.2f}) ({:.2f}, {:.2f})".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[3][0], cmd_rot[3][1])
+
         return new_line
 
     elif "CREATE_LIGHT" in line_uppercase:
         # r_h_2_prison_alarm_light_1 = CREATE_LIGHT (29.00, 241.00, 1.00) 7.99 255 (255, 0, 0) 30 100 5
         cmd = read_line(line, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.COORD_XYZ_F, Cmd.PARAM_FLOAT, Cmd.PARAM_NUM, Cmd.RGB, Cmd.PARAM_NUM, Cmd.PARAM_NUM, Cmd.PARAM_NUM)
+        cmd_rot = rotate_params(cmd, rotation_angle, blacklist_indexes=[5])
+        new_line = "{} = {} ({:.2f}, {:.2f}, {:.2f}) {} {} ({}, {}, {}) {} {} {}".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4], cmd_rot[5][0], cmd_rot[5][1], cmd_rot[5][2], cmd_rot[6], cmd_rot[7], cmd_rot[8])
         return new_line
 
     elif "LIGHT" in line_uppercase:
         # LIGHT light1 = (182.50, 174.50, 2.00) 3.00 255 (98, 204, 140) 0 0 0
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_FLOAT, Cmd.PARAM_NUM, Cmd.RGB, Cmd.PARAM_NUM, Cmd.PARAM_NUM, Cmd.PARAM_NUM)
+        cmd_rot = rotate_params(cmd, rotation_angle, blacklist_indexes=[5])
+        new_line = "{} {} = ({:.2f}, {:.2f}, {:.2f}) {} {} ({}, {}, {}) {} {} {}".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4], cmd_rot[5][0], cmd_rot[5][1], cmd_rot[5][2], cmd_rot[6], cmd_rot[7], cmd_rot[8])
         return new_line
 
     elif "DOOR_DATA" in line_uppercase:
@@ -664,31 +677,39 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         # BOTTOM 0 ANY_PLAYER_ONE_CAR CLOSE_WHEN_OPEN_RULE_FAILS 0 FLIP_RIGHT NOT_REVERSED
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.PARAM_ENUM, Cmd.COORD_XYZ_U8, Cmd.COORD_XYZ_WH_F,
                         Cmd.PARAM_ENUM, Cmd.PARAM_NUM, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.PARAM_NUM, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM_OR_NUM)
+        # TODO: subtract/add 1 to (x,y,z) depending of rot angle maybe
+        # TODO: bottom/top stuff
         return new_line
 
     elif "SET_GANG_INFO" in line_uppercase:
         # SET_GANG_INFO (redngang, 5, PISTOL, MACHINE_GUN, MOLOTOV, 4, 47.50, 49.50, 255.00, 1, PICKUP, 3)
         cmd = read_line(line, Cmd.OPCODE, Cmd.GANG_INFO)
+        cmd_rot = rotate_params(cmd, rotation_angle)
+        new_line = "{} ({}, {}, {}, {}, {}, {}, {:.2f}, {:.2f}, {:.2f}, {}, {}, {})".format(cmd_rot[0], cmd_rot[1], cmd_rot[2], cmd_rot[3], cmd_rot[4], cmd_rot[5], cmd_rot[6], cmd_rot[7][0], cmd_rot[7][1], cmd_rot[7][2], cmd_rot[8], cmd_rot[9], cmd_rot[10])
 
-        # xyz
         return new_line
 
     elif "CRUSHER" in line_uppercase:
         # CRUSHER crusher1 = (244.50, 243.50)
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XY_F)
+        cmd_rot = rotate_params(cmd, rotation_angle)
+        new_line = "{} {} = ({:.2f}, {:.2f})".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1])
 
-        # xy
         return new_line
 
     elif "THREAD_WAIT_FOR_CHAR_IN_AREA" in line_uppercase:  # and "THREAD_WAIT_FOR_CHAR_IN_AREA_ANY_MEANS"
         # THREAD_TRIGGER thr_kill_frenzy_6 = THREAD_WAIT_FOR_CHAR_IN_AREA (p1, 112.50, 241.50, 2.00, 0.50, 0.50, do_kill_frenzy_6:)
         # THREAD_TRIGGER thr_kill_frenzy_6 = THREAD_WAIT_FOR_CHAR_IN_AREA_ANY_MEANS (p1, 112.50, 241.50, 2.00, 0.50, 0.50, do_kill_frenzy_6:)
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.THREAD_AREA_TYPE)
+        cmd_rot = rotate_params(cmd, rotation_angle)
+        new_line = "{} {} = {} ({}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {})".format(cmd_rot[0], cmd_rot[1], cmd_rot[2], cmd_rot[3], cmd_rot[4][0], cmd_rot[4][1], cmd_rot[4][2], cmd_rot[4][3], cmd_rot[4][4], cmd_rot[5])
         return new_line
 
     elif "THREAD_WAIT_FOR_CHAR_IN_BLOCK" in line_uppercase:
         # THREAD_TRIGGER test1 = THREAD_WAIT_FOR_CHAR_IN_BLOCK (p1, 112.50, 241.50, 2.00, do_something:)
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.THREAD_BLOCK_TYPE)
+        cmd_rot = rotate_params(cmd, rotation_angle)
+        new_line = "{} {} = {} ({}, {:.2f}, {:.2f}, {:.2f}, {})".format(cmd_rot[0], cmd_rot[1], cmd_rot[2], cmd_rot[3], cmd_rot[4][0], cmd_rot[4][1], cmd_rot[4][2], cmd_rot[5])
         return new_line
 
     return new_line
