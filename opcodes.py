@@ -6,7 +6,8 @@ DEC_OPCODES_LIST = ["OBJ_DATA", "GENERATOR", "CHAR_DATA", "CREATE_CHAR", "PARKED
                     "CAR_DATA", "THREAD_WAIT_FOR_CHAR_IN_AREA", "LIGHT", "CRANE_DATA", "CREATE_OBJ", 
                      "CREATE_CAR", "CREATE_SOUND", "CREATE_LIGHT", "CREATE_GANG_CAR", "DOOR_DATA", 
                     "SOUND", "DECLARE_CRANE_POWERUP", "CRUSHER", "DESTRUCTOR", "SET_GANG_INFO", 
-                    "RADIO_STATION", "CONVEYOR", "PLAYER_PED", "THREAD_WAIT_FOR_CHAR_IN_BLOCK"
+                    "RADIO_STATION", "CONVEYOR", "PLAYER_PED", "THREAD_WAIT_FOR_CHAR_IN_BLOCK",
+                    "CREATE_CHAR_INSIDE_CAR",
                     ]
 
 # execution opcodes
@@ -68,17 +69,23 @@ def rotate_tuple(coords: tuple, rotation_angle: int) -> tuple:
     # (123.50, 125.50, 2.0)
     # (123.50, 125.50, 2.0, 1.0, 1.0)
     coords_list = list(coords)
+
+    if type(coords_list[0]) == int:
+        offset = 1
+    else:
+        offset = 0
+
     if rotation_angle == 180:
-        coords_list[0] = MAP_MAX_X - coords[0]
-        coords_list[1] = MAP_MAX_Y - coords[1]
+        coords_list[0] = MAP_MAX_X - coords[0] - offset
+        coords_list[1] = MAP_MAX_Y - coords[1] - offset
     elif rotation_angle == 90:
-        coords_list[0] = MAP_MAX_Y - coords[1]
+        coords_list[0] = MAP_MAX_Y - coords[1] - offset
         coords_list[1] = coords[0]
         if len(coords_list) == 5:   # swap width and height
             coords_list[3], coords_list[4] = coords_list[4], coords_list[3]
     elif rotation_angle == 270:
         coords_list[0] = coords[1]
-        coords_list[1] = MAP_MAX_X - coords[0]
+        coords_list[1] = MAP_MAX_X - coords[0] - offset
         if len(coords_list) == 5:   # swap width and height
             coords_list[3], coords_list[4] = coords_list[4], coords_list[3]
     return tuple(coords_list)
@@ -446,11 +453,7 @@ def read_line(line, *args) -> list:
 
     return command
 
-def get_comment(line):
-    comment_pointer = line.find("//")
-    if comment_pointer != -1:
-        return line[comment_pointer + 2:]
-    return None
+
 
 
 
@@ -461,11 +464,11 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         return line     # do nothing
     
     new_line = line
-    comment = get_comment(line)
+    #comment = get_comment(line)
 
     # remove comment from line if it exists
-    if comment is not None:
-        line = line[ : line.find("//") ]
+    #if comment is not None:
+    #    line = line[ : line.find("//") ]
     
     line_uppercase = line.upper()
 
@@ -481,6 +484,8 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
     elif ("PARKED_CAR_DATA" in line_uppercase       # TODO: simplify: just CAR_DATA
         or "CAR_DATA" in line_uppercase):
         # PARKED_CAR_DATA auto14 = (38.50, 26.50, 255.00) 2 170 PICKUP
+        if len(line.strip().split(' ')) < 4:    # if not just declaring var
+            return new_line
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM)
         cmd_rot = rotate_params(cmd, rotation_angle, rotation_param_indexes=[4])
 
@@ -516,6 +521,8 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         return new_line
 
     elif "CHAR_DATA" in line_uppercase:
+        if len(line.strip().split(' ')) < 4:    # if not just declaring var
+            return new_line
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_ENUM)
         if len(cmd) > 2: # if not just declaring var
             cmd_rot = rotate_params(cmd, rotation_angle, rotation_param_indexes=[4])
@@ -526,6 +533,8 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         return new_line
 
     elif "CREATE_CHAR" in line_uppercase:
+        if "CREATE_CHAR_INSIDE_CAR" in line_uppercase:
+            return new_line
         # l_e_1_guard_1 = CREATE_CHAR (157.50, 9.50, 3.00) 8 0 CRIMINAL END
         cmd = read_line(line, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.COORD_XYZ_F, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_ENUM)
         cmd_rot = rotate_params(cmd, rotation_angle, rotation_param_indexes=[4])
@@ -538,6 +547,8 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
     elif "OBJ_DATA" in line_uppercase:
         # OBJ_DATA obj4 = (120.50, 120.50, 3.00) 0 TUNNEL_BLOCKER
         # OBJ_DATA shop1 = (6.50, 181.50, 2.00) 0 CAR_SHOP MACHINEGUN_SHOP
+        if len(line.strip().split(' ')) < 4:    # if not just declaring var
+            return new_line
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM_OR_NUM)
         if len(cmd) > 2: # if not just declaring var
             cmd_rot = rotate_params(cmd, rotation_angle, rotation_param_indexes=[3])
@@ -556,16 +567,22 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
 
     elif "CREATE_OBJ" in line_uppercase:
         # l_e_1_molotov_1 = CREATE_OBJ (160.50, 11.50, 3.00) 0 COLLECT_04 10 END
+        # r_e_1_shotgun = CREATE_OBJ (47.50, 19.50, 2.00) 0 COLLECT_06 END
         cmd = read_line(line, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.OPCODE, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.OPT_PARAM_ENUM_OR_NUM)
         if type(cmd[-1]) == str and cmd[-1].upper() == "END":
             cmd.pop()
 
         cmd_rot = rotate_params(cmd, rotation_angle, rotation_param_indexes=[3])
-
-        if len(cmd_rot[2]) == 3:
-            new_line = "{} = {} ({:.2f}, {:.2f}, {:.2f}) {} {} {} END".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4], cmd_rot[5])
-        else:
-            new_line = "{} = {} ({:.2f}, {:.2f}) {} {} {} END".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[3], cmd_rot[4], cmd_rot[5])
+        if len(cmd_rot) == 6:
+            if len(cmd_rot[2]) == 3:
+                new_line = "{} = {} ({:.2f}, {:.2f}, {:.2f}) {} {} {} END".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4], cmd_rot[5])
+            else:
+                new_line = "{} = {} ({:.2f}, {:.2f}) {} {} {} END".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[3], cmd_rot[4], cmd_rot[5])
+        elif len(cmd_rot) == 5:
+            if len(cmd_rot[2]) == 3:
+                new_line = "{} = {} ({:.2f}, {:.2f}, {:.2f}) {} {} END".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4])
+            else:
+                new_line = "{} = {} ({:.2f}, {:.2f}) {} {} END".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[3], cmd_rot[4])
 
         #print(cmd)
         return new_line
@@ -602,9 +619,12 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
 
     elif "SOUND" in line_uppercase:
         # SOUND sound1 = (155.50, 139.50, 6.00) CHURCH_SINGING PLAY_FOREVER
+        if len(line.strip().split(' ')) < 4:    # if not just declaring var
+            return new_line
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM)
-        cmd_rot = rotate_params(cmd, rotation_angle)
-        new_line = "{} {} = ({:.2f}, {:.2f}, {:.2f}) {} {}".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4])
+        if len(cmd) > 2:
+            cmd_rot = rotate_params(cmd, rotation_angle)
+            new_line = "{} {} = ({:.2f}, {:.2f}, {:.2f}) {} {}".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4])
         return new_line
 
     elif "RADIO_STATION" in line_uppercase:
@@ -645,6 +665,8 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         # GENERATOR gen1 = (4.50, 83.50, 3.00) 0 MOVING_COLLECT_01 80 80
         # GENERATOR name = (X,Y) rotation WEAPON_TYPE mindelay maxdelay
         # GENERATOR name = (X,Y,Z) rotation WEAPON_TYPE mindelay maxdelay ammo
+        if "SWITCH_GENERATOR" in line_uppercase:
+            return new_line
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.ROTATION, Cmd.PARAM_ENUM, Cmd.PARAM_NUM, Cmd.PARAM_NUM, Cmd.OPT_PARAM_NUM)
         cmd_rot = rotate_params(cmd, rotation_angle, rotation_param_indexes=[3])
 
@@ -682,6 +704,8 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
 
     elif "LIGHT" in line_uppercase:
         # LIGHT light1 = (182.50, 174.50, 2.00) 3.00 255 (98, 204, 140) 0 0 0
+        if len(line.strip().split(' ')) < 4:    # if not just declaring var
+            return new_line
         cmd = read_line(line, Cmd.OPCODE, Cmd.VAR_NAME, Cmd.EQUAL, Cmd.COORD_XYZ_F, Cmd.PARAM_FLOAT, Cmd.PARAM_NUM, Cmd.RGB, Cmd.PARAM_NUM, Cmd.PARAM_NUM, Cmd.PARAM_NUM)
         cmd_rot = rotate_params(cmd, rotation_angle, blacklist_indexes=[5])
         new_line = "{} {} = ({:.2f}, {:.2f}, {:.2f}) {} {} ({}, {}, {}) {} {} {}".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4], cmd_rot[5][0], cmd_rot[5][1], cmd_rot[5][2], cmd_rot[6], cmd_rot[7], cmd_rot[8])
@@ -712,6 +736,9 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         
         new_face = new_array[index]
         cmd_rot[5] = new_face
+
+        if new_face == "TOP":
+            pass
 
         new_line = "{} {} = {} ({}, {}, {}) ({:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}) {} {} {} {} {} {} {}".format(cmd_rot[0], cmd_rot[1], cmd_rot[2], cmd_rot[3][0], cmd_rot[3][1], cmd_rot[3][2],
                     cmd_rot[4][0], cmd_rot[4][1], cmd_rot[4][2], cmd_rot[4][3], cmd_rot[4][4], cmd_rot[5], cmd_rot[6], cmd_rot[7], cmd_rot[8], cmd_rot[9], cmd_rot[10], cmd_rot[11])
@@ -798,11 +825,11 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
         return line     # do nothing
     
     new_line = line
-    comment = get_comment(line)
+    #comment = get_comment(line)
 
     # remove comment from line if it exists
-    if comment is not None:
-        line = line[ : line.find("//") ]
+    #if comment is not None:
+    #    line = line[ : line.find("//") ]
     
     line_uppercase = line.upper()
     
@@ -911,6 +938,7 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
         elif "TYPE" in line_uppercase:
             # CHANGE_BLOCK TYPE (177, 229, 1) FIELD 0
             cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_ENUM, Cmd.COORD_XYZ_U8, Cmd.PARAM_ENUM, Cmd.PARAM_NUM)
+        return new_line
 
     elif "SWITCH_ROAD" in line_uppercase:
         cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_ENUM, Cmd.COORD_XYZ_U8)
@@ -957,7 +985,7 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
         return new_line
 
     
-    #return new_line
+    return new_line
 
 
 
@@ -983,9 +1011,9 @@ lines2 = [
     "LOWER_LEVEL (177, 229) (180, 233)", 
 ]
 
-for line in lines2:
-    new_line = rotate_exec_opcode(line, 270)
-    print(new_line)
+#for line in lines2:
+#    new_line = rotate_exec_opcode(line, 270)
+#    print(new_line)
 
 #rotate_exec_opcode(line, 0)
 
@@ -1016,15 +1044,18 @@ def rotate_bool_opcode(line: str, rotation_angle: int):
         # CHECK_CAR_WRECKED_IN_AREA(r_e_1_pickup_car, 48.50, 20.50, 2.00, 3.00, 1.00)
         # IS_CHAR_FIRING_IN_AREA(p1, 45.50, 75.50, 3.00, 1.00, 1.00)
         cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_XYZ_WH_F)
-        print(cmd)
-        
+        cmd_rot = rotate_params(cmd, rotation_angle)
+        new_line = "{}({}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f})".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[2][3], cmd_rot[2][4])
+
         return new_line
     
     elif "IS_POINT_ONSCREEN" in line_uppercase:
         # IS_POINT_ONSCREEN(44.50, 197.50, 4.00)
         cmd = read_line(line, Cmd.OPCODE, Cmd.COORD_XYZ_F)
-        print(cmd)
-    
+        cmd_rot = rotate_params(cmd, rotation_angle)
+        new_line = "{}({:.2f}, {:.2f}, {:.2f})".format(cmd_rot[0], cmd_rot[1][0], cmd_rot[1][1], cmd_rot[1][2])
+        #print(cmd)
+    return new_line
 
 lines3 = [
     "IS_CAR_IN_BLOCK(r_m_3_tank_car, 235.50, 117.50, 2.00, 1.00, 1.00)", 
@@ -1035,8 +1066,8 @@ lines3 = [
     "IS_CHAR_FIRING_IN_AREA(p1, 45.50, 75.50, 3.00, 1.00, 1.00)",
 ]
 
-for line in lines3:
-    rotate_bool_opcode(line, 0)
+#for line in lines3:
+#    print(rotate_bool_opcode(line, 270))
 
 
 
@@ -1052,6 +1083,7 @@ def get_boolean_command_from_line(line: str, opcode: str, offset: int | None = 0
     TODO: explain more
     """
     line_to_parse = line[offset:]
+    #print(line_to_parse + "\n\n\n\n")
     if opcode in line_to_parse:
         opcode_str_pos = line_to_parse.find(opcode)
 
@@ -1066,7 +1098,7 @@ def get_boolean_command_from_line(line: str, opcode: str, offset: int | None = 0
         
         return line[:offset] + left_part, cmd_line, right_part
     else:
-        print(f"ERROR! Opcode not found in string: {line}")
+        print(f"ERROR! Opcode '{opcode}' not found in string: {line}")
         sys.exit(-1)
 
 #results = get_boolean_command_from_line(line4, "IS_CAR_IN_BLOCK")
@@ -1087,17 +1119,17 @@ def get_bool_opcodes_from_line(line):
 
 #print(get_bool_opcodes_from_line(line4))
 
-def protoype_test(line):
+def rotate_bool_line(line, rotation_angle):
     opcodes_in_line = get_bool_opcodes_from_line(line)      # EX:  ["IS_CAR_IN_BLOCK", "IS_CAR_IN_BLOCK", "LOCATE_CHAR_ANY_MEANS"]
-    #result = line
     offset = 0
     for opcode in opcodes_in_line:
         left, cmd, right = get_boolean_command_from_line(line, opcode, offset)
-        # cmd = rotate_bool_opcode(cmd, rotation)
+        cmd = rotate_bool_opcode(cmd, rotation_angle)
         line = left + cmd + right
-        offset += len(left) + len(cmd)
+        offset = len(left) + len(cmd)
     return line
 
 
-#print(protoype_test(line4))
+line_500 = "       IF ( ( ( IS_CAR_IN_BLOCK(s_e_1_taxi_car, 197.50, 247.50, 3.00, 3.00, 4.00) ) OR ( IS_CAR_IN_BLOCK(s_e_1_taxi_car, 197.50, 247.50, 3.00, 3.00, 3.00) ) ) OR ( IS_CAR_IN_BLOCK(s_e_1_taxi_car, 197.50, 247.50, 3.00, 3.00, 2.00) ) )"
+rotate_bool_line(line_500, 90)
 

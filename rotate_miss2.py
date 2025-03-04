@@ -16,6 +16,21 @@ def get_filename(path):
     j = str_path.rfind('.')
     return str_path[i:j]
 
+def get_comment(line: str):
+    comment_pointer = line.find("//")
+    if comment_pointer != -1:
+        return line[comment_pointer + 2:]
+    return None
+
+def get_whitespaces(line: str):
+    result = ""
+    for chr in line:
+        if chr == ' ' or chr == '\t':
+            result += chr
+        else:
+            break
+    return result
+
 def sum_dict(dict_1: dict, dict_2: dict):
     for opcode in dict_2:
         n_times = dict_1.get(opcode)
@@ -95,19 +110,38 @@ def read_and_rotate_lines(miss2_path, rotation_ang):
 
 def rotate_script_info(miss2_path, rotation_ang, output_path):
 
-    lines_array, lines_index = read_and_rotate_lines(miss2_path, rotation_ang)
+    print(f"\nFile {get_filename(miss2_path)}.mis: \n")
 
-    line_num = 0
+    with open(miss2_path, 'r') as source_file:
+        with open(output_path, 'w+') as output_file:
 
-    # TODO
+            for line in source_file:
+                
+                comment = get_comment(line)
+                # remove comment from line if it exists
+                if comment is not None:
+                    line = line[ : line.find("//") ]
 
-    #with open(miss2_path, 'r+') as file:
-    #    for line in file:   #  TODO: where is stream?
-    #        if line_num in lines_index:
-    #            file.seek(file.tell() - len(line))      # get back      TODO: stream
-    #            file.write(lines_array[lines_index])
+                tabs_whitespaces = get_whitespaces(line)
+                
+                if opcodes.is_dec_opcode_rotatable(line):
+                    new_line = opcodes.rotate_dec_opcode(line, rotation_ang)
+                elif opcodes.is_exec_opcode_rotatable(line):
+                    new_line = opcodes.rotate_exec_opcode(line, rotation_ang)
+                elif opcodes.is_bool_opcode_rotatable(line):
+                    new_line = opcodes.rotate_bool_line(line, rotation_ang)
+                else:
+                    if comment is not None:
+                        line += " // " + comment
+                    output_file.write(line)
+                    continue
+                
+                if comment is not None:
+                    new_line += " // " + comment
 
-    return
+                new_line = tabs_whitespaces + new_line + "\n"
+                output_file.write(new_line)
+
 
 def main():
     parser = argparse.ArgumentParser(PROGRAM_NAME)
@@ -146,10 +180,10 @@ def main():
     # create a copy of the base script
 
     output_path = output_folder / (filename + ".mis")
-    shutil.copy(miss2_path, output_path)
+    # TODO shutil.copy(miss2_path, output_path)
     
     # rotate script info
-    #rotate_script_info(miss2_path, rotation_angle, output_path)
+    rotate_script_info(miss2_path, rotation_angle, output_path)
 
     # get statistic data
     dec_dict, exec_dict, bool_dict = read_and_get_statistical(miss2_path)
@@ -175,9 +209,9 @@ def main():
 
                 filename = get_filename(mission_path)
                 output_path = missions_output_folder / (filename + ".mis")
-                shutil.copy(mission_path, output_path)
+                #shutil.copy(mission_path, output_path)
                 
-                #rotate_script_info(mission_path, rotation_angle, output_path)
+                rotate_script_info(mission_path, rotation_angle, output_path)
 
                 # get statistic data
                 miss_dec_dict, miss_exec_dict, miss_bool_dict = read_and_get_statistical(mission_path)
