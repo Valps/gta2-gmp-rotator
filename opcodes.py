@@ -90,16 +90,29 @@ def rotate_tuple(coords: tuple, rotation_angle: int) -> tuple:
             coords_list[3], coords_list[4] = coords_list[4], coords_list[3]
     return tuple(coords_list)
 
-def rotate_params(cmd: list, rotation_angle: int, rotation_param_indexes: list[int] | None = [], width_height_tuple_indexes: list[int] | None = [], blacklist_indexes: list[int] | None = []):
+def rotate_params(cmd: list, 
+                  rotation_angle: int, 
+                  rotation_param_indexes: list[int] | None = [], 
+                  width_height_tuple_indexes: list[int] | None = [], 
+                  blacklist_indexes: list[int] | None = [], 
+                  reverse_rot_param: bool | None = False
+                  ):
     for i, param in enumerate(cmd):
         if i in blacklist_indexes:
             continue
         if i in rotation_param_indexes:
             # rotate rotation parameter
             assert type(param) == int
-            cmd[i] = (param - rotation_angle)   # rotate clockwise
-            if cmd[i] < 0:      # mod 360
-                cmd[i] += 360
+
+            if not reverse_rot_param:
+                cmd[i] = (param - rotation_angle)   # rotate clockwise
+                if cmd[i] < 0:      # mod 360
+                    cmd[i] += 360
+            
+            else:
+                cmd[i] = (param + rotation_angle)   # rotate anti-clockwise
+                if cmd[i] >= 360:      # mod 360
+                    cmd[i] -= 360
 
         elif type(param) == tuple:
             # rotate position coordinates
@@ -128,13 +141,25 @@ def shift_array(array: list, num_permutations: int) -> list:
         new_array.append(first)
     return new_array
 
-    if (num_permutations == 0):
-        print("Error: invalid permutation")
+def rotate_face(old_face: str, rotation_angle: int):
+
+    if old_face.upper() not in DOOR_FACES:
+        print(f"ERROR: Face {old_face} isn't a door face.")
         sys.exit(-1)
-    if (num_permutations == 1):
-        return new_array
+    index = DOOR_FACES.index(old_face)
+
+    if rotation_angle == 90:
+        new_array = shift_array(DOOR_FACES, 1)
+    elif rotation_angle == 180:
+        new_array = shift_array(DOOR_FACES, 2)
+    elif rotation_angle == 270:
+        new_array = shift_array(DOOR_FACES, 3)
     else:
-        return shift_array(new_array, num_permutations - 1)
+        print(f"ERROR: Invalid angle {rotation_angle}.")
+        sys.exit(-1)
+        
+    new_face = new_array[index]
+    return new_face
 
 # Line parser stuff
 
@@ -188,6 +213,9 @@ def get_next_numeric_param(line):
     """
     number_str = ""
     for i, chr in enumerate(line):
+        if len(number_str) == 0 and chr == '-':
+            number_str += chr
+            continue
         if not chr.isdigit():
             if len(number_str) != 0:
                 return ( int(number_str) , i )
@@ -458,17 +486,8 @@ def read_line(line, *args) -> list:
 
 
 def rotate_dec_opcode(line: str, rotation_angle: int):
-
-    # TODO: remove this; do it before calling this function
-    if not is_dec_opcode_rotatable(line):
-        return line     # do nothing
     
     new_line = line
-    #comment = get_comment(line)
-
-    # remove comment from line if it exists
-    #if comment is not None:
-    #    line = line[ : line.find("//") ]
     
     line_uppercase = line.upper()
 
@@ -481,8 +500,7 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         new_line = "{} {} = ({:.2f}, {:.2f}, {:.2f}) {} {}".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4])
         return new_line
     
-    elif ("PARKED_CAR_DATA" in line_uppercase       # TODO: simplify: just CAR_DATA
-        or "CAR_DATA" in line_uppercase):
+    elif ("CAR_DATA" in line_uppercase):
         # PARKED_CAR_DATA auto14 = (38.50, 26.50, 255.00) 2 170 PICKUP
         if len(line.strip().split(' ')) < 4:    # if not just declaring var
             return new_line
@@ -719,26 +737,8 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         cmd_rot = rotate_params(cmd, rotation_angle)
 
         old_face = cmd_rot[5]
-        if old_face.upper() not in DOOR_FACES:
-            print(f"ERROR: Face {old_face} isn't a door face.")
-            sys.exit(-1)
-        index = DOOR_FACES.index(old_face)
-
-        if rotation_angle == 90:
-            new_array = shift_array(DOOR_FACES, 1)
-        elif rotation_angle == 180:
-            new_array = shift_array(DOOR_FACES, 2)
-        elif rotation_angle == 270:
-            new_array = shift_array(DOOR_FACES, 3)
-        else:
-            print(f"ERROR: Invalid angle {rotation_angle}.")
-            sys.exit(-1)
-        
-        new_face = new_array[index]
+        new_face = rotate_face(old_face, rotation_angle)
         cmd_rot[5] = new_face
-
-        if new_face == "TOP":
-            pass
 
         new_line = "{} {} = {} ({}, {}, {}) ({:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}) {} {} {} {} {} {} {}".format(cmd_rot[0], cmd_rot[1], cmd_rot[2], cmd_rot[3][0], cmd_rot[3][1], cmd_rot[3][2],
                     cmd_rot[4][0], cmd_rot[4][1], cmd_rot[4][2], cmd_rot[4][3], cmd_rot[4][4], cmd_rot[5], cmd_rot[6], cmd_rot[7], cmd_rot[8], cmd_rot[9], cmd_rot[10], cmd_rot[11])
@@ -820,16 +820,7 @@ lines = [
 
 def rotate_exec_opcode(line: str, rotation_angle: int):
 
-    # TODO: remove this; do it before calling this function
-    if not is_exec_opcode_rotatable(line):
-        return line     # do nothing
-    
     new_line = line
-    #comment = get_comment(line)
-
-    # remove comment from line if it exists
-    #if comment is not None:
-    #    line = line[ : line.find("//") ]
     
     line_uppercase = line.upper()
     
@@ -928,16 +919,29 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
         new_line = "{} ({}, {}, {})".format(cmd_rot[0], cmd_rot[1][0], cmd_rot[1][1], cmd_rot[1][2])
         return new_line
 
-    elif "CHANGE_BLOCK" in line_uppercase:  # TODO
+    elif "CHANGE_BLOCK" in line_uppercase:
         if "SIDE" in line_uppercase:
+            # CHANGE_BLOCK SIDE (16, 31, 3) BOTTOM WALL BULLET NOT_FLAT NOT_FLIP 0 142
             cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_ENUM, Cmd.COORD_XYZ_U8, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.ROTATION, Cmd.PARAM_NUM)
+            cmd_rot = rotate_params(cmd, rotation_angle)
+            old_face = cmd_rot[3]
+            new_face = rotate_face(old_face, rotation_angle)
+            cmd_rot[3] = new_face
+            new_line = "{} {} ({}, {}, {}) {} {} {} {} {} {} {}".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4], cmd_rot[5], cmd_rot[6], cmd_rot[7], cmd_rot[8], cmd_rot[9])
             
         elif "LID" in line_uppercase:
+            # CHANGE_BLOCK LID (176, 228, 1) NOT_FLAT NOT_FLIP 0 0 978
             cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_ENUM, Cmd.COORD_XYZ_U8, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_NUM)
+            cmd_rot = rotate_params(cmd, rotation_angle, rotation_param_indexes=[6], reverse_rot_param=True)
+            new_line = "{} {} ({}, {}, {}) {} {} {} {} {}".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4], cmd_rot[5], cmd_rot[6], cmd_rot[7])
         
         elif "TYPE" in line_uppercase:
             # CHANGE_BLOCK TYPE (177, 229, 1) FIELD 0
             cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_ENUM, Cmd.COORD_XYZ_U8, Cmd.PARAM_ENUM, Cmd.PARAM_NUM)
+            cmd_rot = rotate_params(cmd, rotation_angle)
+            new_line = "{} {} ({}, {}, {}) {} {}".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4])
+
+
         return new_line
 
     elif "SWITCH_ROAD" in line_uppercase:
@@ -948,9 +952,30 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
         return new_line
 
     elif "LOWER_LEVEL" in line_uppercase:
+        # LOWER_LEVEL (177, 229) (180, 233)
         cmd = read_line(line, Cmd.OPCODE, Cmd.COORD_XY_U8, Cmd.COORD_XY_U8)
-        # TODO
-        # xy xy
+        minX, minY = cmd[1][0], cmd[1][1]
+        maxX, maxY = cmd[2][0], cmd[2][1]
+
+        width = maxX - minX
+        height = maxY - minY
+
+        #cmd_rot = rotate_params(cmd, rotation_angle)
+
+        if (rotation_angle == 180):
+            minX = MAP_MAX_X - minX - width - 1
+            minY = MAP_MAX_Y - minY - height - 1
+        elif (rotation_angle == 90):
+            minX, minY = MAP_MAX_Y - minY - height - 1, minX
+            width, height = height, width
+        elif (rotation_angle == 270):
+            minX, minY = minY, MAP_MAX_X - minX - width - 1
+            width, height = height, width
+
+        maxX = minX + width
+        maxY = minY + height
+
+        new_line = "{} ({}, {}) ({}, {})".format(cmd[0], minX, minY, maxX, maxY)
         return new_line
     
     elif "WARP_FROM_CAR_TO_POINT" in line_uppercase:
@@ -1012,7 +1037,7 @@ lines2 = [
 ]
 
 #for line in lines2:
-#    new_line = rotate_exec_opcode(line, 270)
+#    new_line = rotate_exec_opcode(line, 90)
 #    print(new_line)
 
 #rotate_exec_opcode(line, 0)
@@ -1025,8 +1050,8 @@ lines2 = [
 def rotate_bool_opcode(line: str, rotation_angle: int):
 
     # TODO: remove this; do it before calling this function
-    if not is_bool_opcode_rotatable(line):
-        return line     # do nothing
+    #if not is_bool_opcode_rotatable(line):
+    #    return line     # do nothing
     
     new_line = line
     
