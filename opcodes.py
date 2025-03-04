@@ -721,6 +721,8 @@ def rotate_dec_opcode(line: str, rotation_angle: int):
         return new_line
 
     elif "LIGHT" in line_uppercase:
+        if "ARE_EMERG_LIGHTS_ON" in line_uppercase:
+            return new_line
         # LIGHT light1 = (182.50, 174.50, 2.00) 3.00 255 (98, 204, 140) 0 0 0
         if len(line.strip().split(' ')) < 4:    # if not just declaring var
             return new_line
@@ -883,7 +885,7 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
         # filter the cases in which there are rotation or coordinates
         params = line[ line.find('(') : line.find(')') + 1 ].split(',')
         if len(params) == 5:
-            if "FOLLOW_CAR_ON_FOOT_WITH_OFFSET" in line:
+            if "FOLLOW_CAR_ON_FOOT_WITH_OFFSET" in line_uppercase:
                 cmd = read_line(line, Cmd.OPCODE)
                 params, pointer = get_info_manually(line, integer_indexes=[3], float_indexes=[4])
                 cmd.extend(params)
@@ -933,6 +935,17 @@ def rotate_exec_opcode(line: str, rotation_angle: int):
             # CHANGE_BLOCK LID (176, 228, 1) NOT_FLAT NOT_FLIP 0 0 978
             cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_ENUM, Cmd.COORD_XYZ_U8, Cmd.PARAM_ENUM, Cmd.PARAM_ENUM, Cmd.PARAM_NUM, Cmd.ROTATION, Cmd.PARAM_NUM)
             cmd_rot = rotate_params(cmd, rotation_angle, rotation_param_indexes=[6], reverse_rot_param=True)
+            
+            # fix flipped lid tiles for 90 and 270 angles
+            if rotation_angle == 90 or rotation_angle == 270:
+                flip_status = cmd[4].strip().upper()
+                if flip_status == "FLIP":
+                    cmd_rot[6] += 180
+                    if cmd_rot[6] >= 360:
+                        cmd_rot[6] -= 360
+
+            #cmd_rot = rotate_params(cmd, rotation_angle, rotation_param_indexes=[6], reverse_rot_param=True)
+            
             new_line = "{} {} ({}, {}, {}) {} {} {} {} {}".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[3], cmd_rot[4], cmd_rot[5], cmd_rot[6], cmd_rot[7])
         
         elif "TYPE" in line_uppercase:
@@ -1043,10 +1056,6 @@ lines2 = [
 #rotate_exec_opcode(line, 0)
 
 
-
-
-
-
 def rotate_bool_opcode(line: str, rotation_angle: int):
 
     # TODO: remove this; do it before calling this function
@@ -1057,12 +1066,11 @@ def rotate_bool_opcode(line: str, rotation_angle: int):
     
     line_uppercase = line.upper()
     
-    if ("IS_CAR_IN_BLOCK" in line_uppercase
-        or "LOCATE_CHARACTER_" in line_uppercase
+    if ("LOCATE_CHARACTER_" in line_uppercase
         or "LOCATE_STOPPED_" in line_uppercase
         or "CHECK_CAR_WRECKED_IN_AREA" in line_uppercase
         or "IS_CHAR_FIRING_IN_AREA" in line_uppercase):
-        # IS_CAR_IN_BLOCK(r_m_3_tank_car, 235.50, 117.50, 2.00, 1.00, 1.00)
+        
         # LOCATE_CHARACTER_ANY_MEANS(p1, 153.50, 138.50, 2.00, 1.00, 1.00)
         # LOCATE_CHARACTER_BY_CAR(p1, 246.50, 238.50, 2.00, 10.00, 4.00)
         # LOCATE_CHARACTER_ON_FOOT(p1, 45.50, 75.50, 3.00, 1.00, 1.00)
@@ -1073,6 +1081,20 @@ def rotate_bool_opcode(line: str, rotation_angle: int):
         new_line = "{}({}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f})".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[2][3], cmd_rot[2][4])
 
         return new_line
+    
+    elif "IS_CAR_IN_BLOCK" in line_uppercase:
+        # IS_CAR_IN_BLOCK(r_m_3_tank_car, 235.50, 117.50, 2.00, 1.00, 1.00)
+        # IS_CAR_IN_BLOCK(y_m_1_ice_cream_van, 59.50, 9.50, 2.00)
+
+        cmd = read_line(line, Cmd.OPCODE, Cmd.PARAM_XYZ_WH_F)
+        cmd_rot = rotate_params(cmd, rotation_angle)
+
+        params = line[ line.find('(') + 1 : line.find(')') ].split(',')
+        if len(params) == 6:
+            new_line = "{}({}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f})".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2], cmd_rot[2][3], cmd_rot[2][4])
+        elif len(params) == 4:
+            new_line = "{}({}, {:.2f}, {:.2f}, {:.2f})".format(cmd_rot[0], cmd_rot[1], cmd_rot[2][0], cmd_rot[2][1], cmd_rot[2][2])
+
     
     elif "IS_POINT_ONSCREEN" in line_uppercase:
         # IS_POINT_ONSCREEN(44.50, 197.50, 4.00)
@@ -1154,7 +1176,7 @@ def rotate_bool_line(line, rotation_angle):
         offset = len(left) + len(cmd)
     return line
 
-
-line_500 = "       IF ( ( ( IS_CAR_IN_BLOCK(s_e_1_taxi_car, 197.50, 247.50, 3.00, 3.00, 4.00) ) OR ( IS_CAR_IN_BLOCK(s_e_1_taxi_car, 197.50, 247.50, 3.00, 3.00, 3.00) ) ) OR ( IS_CAR_IN_BLOCK(s_e_1_taxi_car, 197.50, 247.50, 3.00, 3.00, 2.00) ) )"
-rotate_bool_line(line_500, 90)
+line5 = " WHILE_EXEC ( NOT ( IS_CAR_IN_BLOCK(y_m_1_ice_cream_van, 59.50, 9.50, 2.00) ) )         "
+#line_500 = "       IF ( ( ( IS_CAR_IN_BLOCK(s_e_1_taxi_car, 197.50, 247.50, 3.00, 3.00, 4.00) ) OR ( IS_CAR_IN_BLOCK(s_e_1_taxi_car, 197.50, 247.50, 3.00, 3.00, 3.00) ) ) OR ( IS_CAR_IN_BLOCK(s_e_1_taxi_car, 197.50, 247.50, 3.00, 3.00, 2.00) ) )"
+rotate_bool_line(line5, 90)
 

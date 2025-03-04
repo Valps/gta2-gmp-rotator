@@ -110,7 +110,7 @@ def read_and_rotate_lines(miss2_path, rotation_ang):
 
 def rotate_script_info(miss2_path, rotation_ang, output_path):
 
-    print(f"\nFile {get_filename(miss2_path)}.mis: \n")
+    print(f"\nOpening file {get_filename(miss2_path)}.mis: \n")
 
     with open(miss2_path, 'r') as source_file:
         with open(output_path, 'w+') as output_file:
@@ -196,7 +196,7 @@ def main():
     if missions_path.exists():
         for mission_path in missions_path.iterdir():
             if str(mission_path).endswith(".mis"):
-                print(f"Found file: {str(mission_path)}")
+                #print(f"Found file: {str(mission_path)}")
 
                 # create output folder, if it not exists
                 if (missions_output_folder is None):
