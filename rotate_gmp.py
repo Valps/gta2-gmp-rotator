@@ -76,7 +76,11 @@ def detect_headers_and_get_chunks(gmp_path):
     
 
     with open(gmp_path, 'rb') as file:
-        signature = file.read(4).decode('ascii')
+
+        try:
+            signature = file.read(4).decode('ascii')
+        except UnicodeDecodeError:
+            return -1
 
         if (signature != "GBMP"):
             print("Error!\n")
@@ -967,6 +971,11 @@ def rotate_zone_coordinates(zone_data, rotation_angle):
     zone_w = zone_data[3]
     zone_h = zone_data[4]
 
+    # TODO: test
+    #zone_type = zone_data[0]
+    #if zone_type == 14: # ignore gang zones
+    #    return zone_data
+
     if (rotation_angle == 180):
         zone_x = MAP_WIDTH - zone_x - zone_w + 1
         zone_y = MAP_HEIGHT - zone_y - zone_h + 1
@@ -1064,11 +1073,12 @@ def rotate_gmp_lights(output_path, chunk_infos, rotation_angle, light_info_array
     return
 
 
-def rotate_gmp(gmp_path, chunk_infos, rotation_angle):
+def rotate_gmp(gmp_path, chunk_infos, rotation_angle, out_path):
 
     if chunk_infos["UMAP"][0] is None:
         print("Error: This GMP rotator only support uncompressed maps.")
-        sys.exit(-1)
+        return -2
+        #sys.exit(-1)
 
     # create a copy of gmp file
     str_gmp_path = str(gmp_path)
@@ -1076,7 +1086,8 @@ def rotate_gmp(gmp_path, chunk_infos, rotation_angle):
     j = str_gmp_path.rfind('.')
 
     filename = str_gmp_path[i:j]
-    output_path = ROOT_DIR / f"{filename}_rotated.gmp"
+    #output_path = ROOT_DIR / f"{filename}_rotated.gmp"
+    output_path = out_path / f"{filename}_rotated_{rotation_angle}.gmp"
 
     print(f"Creating copy of {filename}.gmp")
     shutil.copyfile(gmp_path, output_path)
@@ -1099,6 +1110,7 @@ def rotate_gmp(gmp_path, chunk_infos, rotation_angle):
 
     # TODO:  only ste.gmp use MOBJ header, but it can't be decompressed without corrupting gmp
     #rotate_gmp_objects(output_path, chunk_infos, rotation_angle, obj_info_array)
+    return 0
 
 
 
@@ -1124,9 +1136,11 @@ def main():
     if (not gmp_path.exists()):
         print("File not found.")
         sys.exit(-1)
+
+    out_path = gmp_path.parent
     
     chunk_infos = detect_headers_and_get_chunks(gmp_path)
-    rotate_gmp(gmp_path, chunk_infos, rotation_angle)
+    rotate_gmp(gmp_path, chunk_infos, rotation_angle, out_path)
         
     return
 
