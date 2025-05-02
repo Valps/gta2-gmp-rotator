@@ -87,7 +87,7 @@ def detect_headers_and_get_chunks(gmp_path):
     
 
     with open(gmp_path, 'rb') as file:
-        
+
         try:
             signature = file.read(4).decode('ascii')
         except UnicodeDecodeError:
@@ -1155,7 +1155,7 @@ def flip_gmp(gmp_path, chunk_infos, flip_code, out_path):
     # create a copy of gmp file
     filename = get_filename(gmp_path)
     #output_path = ROOT_DIR / f"{filename}_flipped_{flip_type}.gmp"
-    output_path = out_path / f"{filename}_rotated_{flip_type}.gmp"
+    output_path = out_path / f"{filename}_flip_{flip_type}.gmp"
 
     print(f"Creating copy of {filename}.gmp")
     shutil.copyfile(gmp_path, output_path)

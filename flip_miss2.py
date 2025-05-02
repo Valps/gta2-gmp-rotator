@@ -206,7 +206,7 @@ def main_flip_miss(miss2_path, flip_code):
     for freq, opcode in bool_list:
         print(f"{opcode}: {freq}")
 
-    return
+    return 0
 
 def main():
     parser = argparse.ArgumentParser(PROGRAM_NAME)

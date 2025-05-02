@@ -34,8 +34,8 @@ window.title("Map Rotator/Flipper v1.0.0")
 window.rowconfigure(0, weight=1)
 window.columnconfigure(0, weight=1)
 
-if Path("rotate.png").exists():
-    window.wm_iconphoto(False, tk.PhotoImage(file='rotate.png'))
+if Path("rotate.ico").exists():
+    window.iconbitmap("rotate.ico")
 
 ROTATE = 0
 FLIP = 1
@@ -55,13 +55,9 @@ def get_gmp_folder():
         gmp_path = Path(gmp_folder)
         assert gmp_path.exists()
 
-        print(gmp_path)
+        set_field(gmp_field, text=str(gmp_path))
+        set_field(out_field, text=str(gmp_path.parent))
 
-        gmp_field.delete(first=0, last="end")
-        out_field.delete(first=0, last="end")
-
-        gmp_field.insert(index=0,string=str(gmp_path))
-        out_field.insert(index=0,string=str(gmp_path.parent))
 
 
 def get_out_folder():
@@ -69,10 +65,7 @@ def get_out_folder():
     if out_folder:
         out_path = Path(out_folder)
         assert out_path.exists()
-
-        print(out_path)
-        out_field.delete(first=0, last="end")
-        out_field.insert(index=0,string=str(out_path))
+        set_field(out_field, text=str(out_path))
 
 def get_miss_folder():
     miss2_folder = askopenfilename(title="Select a MIS file", filetypes=[("GTA2 source script", ".mis")])
@@ -80,13 +73,7 @@ def get_miss_folder():
         miss2_path = Path(miss2_folder)
         assert miss2_path.exists()
 
-        print(miss2_path)
         set_field(miss2_field, text=str(miss2_path))
-        #gmp_field.delete(first=0, last="end")
-        #out_field.delete(first=0, last="end")
-
-        #gmp_field.insert(index=0,string=str(gmp_path))
-        #out_field.insert(index=0,string=str(gmp_path.parent))
 
 gmp_folder_button = tk.Button(text="Search", command=get_gmp_folder)
 gmp_folder_button.grid(row=0, column=3)
@@ -122,11 +109,9 @@ out_label.grid(row=3, column=0, sticky="E")
 rot_box = ttk.Combobox(window, values=list(ROTATION_ANGLES_DICT.keys()), state="readonly")
 rot_box.grid(row=3, column=1, sticky="WE", columnspan=2)
 
-# 'rotate map' button
+# 'rotate/flip map' button
 
-# TODO: rotate script checkbox
-
-def init_rotate_gmp():
+def init_rotate_flip_gmp():
     gmp_path = Path(gmp_field.get())
     out_path = Path(out_field.get())
     miss_path = Path(miss2_field.get())
@@ -238,9 +223,7 @@ rotate_radio_button.grid(row=4, column=1)
 flip_radio_button = tk.Radiobutton(text="Flip", variable=perform_type, value=FLIP, command=swap_params)
 flip_radio_button.grid(row=4, column=2)
 
-rotate_button = tk.Button(text="Rotate map", command=init_rotate_gmp)
+rotate_button = tk.Button(text="Rotate map", command=init_rotate_flip_gmp)
 rotate_button.grid(row=5, column=1, columnspan=2)
-
-
 
 window.mainloop()
