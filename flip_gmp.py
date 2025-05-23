@@ -24,10 +24,21 @@ ROAD_TYPE = 1
 PAVEMENT_TYPE = 2
 FIELD_TYPE = 3
 
+NO_FLIP = 0
+FLIP_X = 1
+FLIP_Y = 2
+FLIP_XY = 3
+
 def two_nibble_from_byte(byte):
     upper_nibble = byte // 16
     lower_nibble = byte % 16
     return (upper_nibble, lower_nibble)
+
+def get_filename(file_path):
+    str_file_path = str(file_path)
+    i = str_file_path.rfind('\\') + 1
+    j = str_file_path.rfind('.')
+    return str_file_path[i:j]
 
 def return_rotation_value_str(binary_rotation_type):
     if (binary_rotation_type == 0):
@@ -425,53 +436,88 @@ def swap_bits(nibble):
                     + 8*((nibble >> 2) % 2) )
     return new_nibble
 
-def shuffle_bits(nibble, rotation_angle):
+def shuffle_bits(nibble, flip_code):
     
-    if (rotation_angle == 90):
-        new_nibble = ( 1*((nibble >> 3) % 2)
-                        + 2*((nibble >> 2) % 2)
-                        + 4*(nibble % 2)
-                        + 8*((nibble >> 1) % 2) )
-    elif (rotation_angle == 270):
-        new_nibble = ( 1*((nibble >> 2) % 2)
-                        + 2*((nibble >> 3) % 2)
-                        + 4*((nibble >> 1) % 2)
-                        + 8*(nibble % 2) )
+    if (flip_code == FLIP_X):
+        # flip left and right arrows
+        new_nibble = ( 1*((nibble >> 1) % 2)
+                        + 2*(nibble % 2)
+                        + 4*((nibble >> 2) % 2)
+                        + 8*((nibble >> 3) % 2) )
+    elif (flip_code == FLIP_Y):
+        # flip up and down arrows
+        new_nibble = ( 1*(nibble % 2)
+                        + 2*((nibble >> 1) % 2)
+                        + 4*((nibble >> 3) % 2)
+                        + 8*((nibble >> 2) % 2) )
     return new_nibble
 
-def rotate_road_arrows(block_data, rotation_angle):
+def flip_road_arrows(block_data, flip_code):
     old_red_arrows_nibble, old_green_arrows_nibble = two_nibble_from_byte(block_data[10])
 
     if old_green_arrows_nibble != 0:
-        if (rotation_angle == 180):
+        if (flip_code == FLIP_XY):
             new_green_arrows_nibble = swap_bits(old_green_arrows_nibble)
-        elif (rotation_angle == 90):
-            new_green_arrows_nibble = shuffle_bits(old_green_arrows_nibble, rotation_angle)
-        elif (rotation_angle == 270):
-            new_green_arrows_nibble = shuffle_bits(old_green_arrows_nibble, rotation_angle)
+        elif (flip_code == FLIP_X):
+            new_green_arrows_nibble = shuffle_bits(old_green_arrows_nibble, flip_code)
+        elif (flip_code == FLIP_Y):
+            new_green_arrows_nibble = shuffle_bits(old_green_arrows_nibble, flip_code)
     else:
         new_green_arrows_nibble = 0
 
     if old_red_arrows_nibble != 0:
-        if (rotation_angle == 180):
+        if (flip_code == FLIP_XY):
             new_red_arrows_nibble = swap_bits(old_red_arrows_nibble)
-        elif (rotation_angle == 90):
-            new_red_arrows_nibble = shuffle_bits(old_red_arrows_nibble, rotation_angle)
-        elif (rotation_angle == 270):
-            new_red_arrows_nibble = shuffle_bits(old_red_arrows_nibble, rotation_angle)
+        elif (flip_code == FLIP_X):
+            new_red_arrows_nibble = shuffle_bits(old_red_arrows_nibble, flip_code)
+        elif (flip_code == FLIP_Y):
+            new_red_arrows_nibble = shuffle_bits(old_red_arrows_nibble, flip_code)
     else:
         new_red_arrows_nibble = 0
 
     new_block_data = block_data[:10] + int.to_bytes(new_red_arrows_nibble*16 + new_green_arrows_nibble) + block_data[11:]
     return new_block_data
 
-def rotate_lid(block_data, rotation_angle):
+def flip_lid(block_data, flip_code):
     lid_word = int.from_bytes(block_data[8:10], 'little')
 
     # verify if the lid tile is 1023 (used in slopes 49...52)
     tile_idx = lid_word % 1024
     if (tile_idx == 1023):
         return block_data   # do nothing
+    
+    #old_flip = ( lid_word >> 13 ) % 2
+    
+    if flip_code == FLIP_X or flip_code == FLIP_Y:
+        
+        lid_word = lid_word ^ (2**13)   # toggle flip on bit 13
+
+        #if old_flip == 0:
+        #    new_flip = 1
+        #elif old_flip == 1:
+        #    new_flip = 0
+
+        old_rotation = lid_word >> 14
+        
+        if flip_code == FLIP_Y:
+            new_rotation = convert_binary_rot(old_rotation, 180)
+        else:
+            new_rotation = old_rotation
+
+    elif flip_code == FLIP_XY:
+        new_rotation = convert_binary_rot(old_rotation, 180)
+        #new_flip = old_flip
+    else:
+        new_rotation = old_rotation
+        #new_flip = old_flip
+
+    sum_bits = new_rotation * (2**14)   # shift left by 14
+    lid_word = lid_word & 16383     # clear the last two bits
+    lid_word += sum_bits
+    
+    new_byte_array = bytes([lid_word % 256, lid_word // 256])
+    new_block_data = block_data[:8] + new_byte_array + block_data[10:]
+    return new_block_data
 
     old_rotation = lid_word >> 14
     new_rotation = convert_binary_rot(old_rotation, rotation_angle)
@@ -494,7 +540,14 @@ def rotate_lid(block_data, rotation_angle):
     new_block_data = block_data[:8] + new_byte_array + block_data[10:]
     return new_block_data
 
-def rotate_sides(block_data, rotation_angle):
+def flip_tile(side_word):
+    return side_word ^ (2**13)
+
+def has_side_tile(side_word):
+    tile_idx = side_word % 1024
+    return True if tile_idx != 0 else False
+
+def flip_sides(block_data, flip_code):
     left_word = int.from_bytes(block_data[0:2], 'little')
     right_word = int.from_bytes(block_data[2:4], 'little')
     top_word = int.from_bytes(block_data[4:6], 'little')
@@ -503,25 +556,37 @@ def rotate_sides(block_data, rotation_angle):
     byte = block_data[-1]
     slope_type = byte >> 2
 
-    # some slopes uses right or left sides only. Rotate their sides accordingly if rot = 90 or 270
+    # some slopes uses right or left sides only. Flip their sides accordingly if flip = FLIP_X
     if (45 <= slope_type <= 52
-        and (rotation_angle == 90 or rotation_angle == 270) ):
+        and (flip_code == FLIP_X) ):    #  or rotation_angle == 270
 
-        new_block_data = change_side_tile(block_data, slope_type, rotation_angle)
+        new_block_data = change_side_tile(block_data, slope_type, 180)  # rotate slopes by 180 degree
+        fix_sides
         return new_block_data
+
+    # flip side tiles as well
+    if (flip_code != FLIP_XY):
+        if has_side_tile(top_word):
+            top_word = flip_tile(top_word)
+        if has_side_tile(bottom_word):
+            bottom_word = flip_tile(bottom_word)
+        if has_side_tile(right_word):
+            right_word = flip_tile(right_word)
+        if has_side_tile(left_word):
+            left_word = flip_tile(left_word)
 
     #array = [left_word, right_word, top_word, bottom_word]
     array = []
 
-    if (rotation_angle == 90):
-        array = [bottom_word, top_word, left_word, right_word]
-    elif (rotation_angle == 180):
+    if (flip_code == FLIP_X):
+        array = [right_word, left_word, top_word, bottom_word]
+    elif (flip_code == FLIP_XY):
         array = [right_word, left_word, bottom_word, top_word]
-    elif (rotation_angle == 270):
-        array = [top_word, bottom_word, right_word, left_word]
+    elif (flip_code == FLIP_Y):
+        array = [left_word, right_word, bottom_word, top_word]
 
     if (array == None):
-        print(f"Error: wrong rotation angle: {rotation_angle}")
+        print(f"Error: wrong flip code: {flip_code}")
         sys.exit(-1)
 
     new_byte_array = bytes([array[0] % 256, 
@@ -631,7 +696,19 @@ def change_side_tile(block_data, slope_type, rotation_angle):
     
     return new_block_data
 
-def rotate_slope(block_data, rotation_angle):
+def swap_slope(array, flip_code):
+    if flip_code == FLIP_X:
+        return [array[0], array[1], array[3], array[2]]
+    elif flip_code == FLIP_Y:
+        return [array[1], array[0], array[2], array[3]]
+    elif flip_code == FLIP_XY:
+        return [array[1], array[0], array[3], array[2]]
+    else:
+        print(f"ERROR! Wrong flip code = {flip_code}")
+        sys.exit(-1)
+        return
+
+def flip_slope(block_data, flip_code):
     byte = block_data[-1]
     slope_type = byte >> 2
 
@@ -645,12 +722,7 @@ def rotate_slope(block_data, rotation_angle):
             slope_array = [1, 3, 5, 7]
             idx = slope_array.index(slope_type)
 
-            if (rotation_angle == 90):
-                new_slope_array = rotate_slope_90(slope_array)
-            elif (rotation_angle == 180):
-                new_slope_array = rotate_slope_180(slope_array)
-            elif (rotation_angle == 270):
-                new_slope_array = rotate_slope_270(slope_array)
+            new_slope_array = swap_slope(slope_array, flip_code)
             
             new_slope_type = new_slope_array[idx]
             
@@ -659,12 +731,7 @@ def rotate_slope(block_data, rotation_angle):
             slope_array = [2, 4, 6, 8]
             idx = slope_array.index(slope_type)
 
-            if (rotation_angle == 90):
-                new_slope_array = rotate_slope_90(slope_array)
-            elif (rotation_angle == 180):
-                new_slope_array = rotate_slope_180(slope_array)
-            elif (rotation_angle == 270):
-                new_slope_array = rotate_slope_270(slope_array)
+            new_slope_array = swap_slope(slope_array, flip_code)
             
             new_slope_type = new_slope_array[idx]
 
@@ -686,8 +753,13 @@ def rotate_slope(block_data, rotation_angle):
         array = [0,1,2,3]
         idx = array.index(direction)
 
-        new_array = shift_array(array, ROTATION_ANGLES.index(rotation_angle))
-        new_direction = new_array[idx]
+        if ( ( (25 <= slope_type <= 40) and (flip_code == FLIP_X) )
+            or ( (9 <= slope_type <= 24) and (flip_code == FLIP_Y) ) ):
+
+            new_array = shift_array(array, ROTATION_ANGLES.index(180))
+            new_direction = new_array[idx]
+        else:
+            new_direction = direction   # do nothing
 
         if (new_direction == 0):
             new_slope_type = 33 + offset
@@ -704,69 +776,64 @@ def rotate_slope(block_data, rotation_angle):
         slope_array = [41, 42, 43, 44]
         idx = slope_array.index(slope_type)
 
-        if (rotation_angle == 90):
-            new_slope_array = rotate_slope_90(slope_array)
-        elif (rotation_angle == 180):
-            new_slope_array = rotate_slope_180(slope_array)
-        elif (rotation_angle == 270):
-            new_slope_array = rotate_slope_270(slope_array)
+        new_slope_array = swap_slope(slope_array, flip_code)
         
         new_slope_type = new_slope_array[idx]
 
     elif (45 <= slope_type <= 48):      # diagonal slope
-
-        slope_array = [45, 48, 47, 46]
-        idx = slope_array.index(slope_type)
-        pass
-        if (rotation_angle == 90):
-            new_slope_array = rotate_slope_90(slope_array)
-        elif (rotation_angle == 180):
-            new_slope_array = rotate_slope_180(slope_array)
-        elif (rotation_angle == 270):
-            new_slope_array = rotate_slope_270(slope_array)
         
+        if flip_code == FLIP_X:
+            slope_array = [45, 46, 47, 48]
+        elif flip_code == FLIP_Y:
+            slope_array = [45, 47, 46, 48]
+        elif flip_code == FLIP_XY:
+            slope_array = [45, 47, 46, 48]  # TODO: flip XY
+            pass
+        
+        
+        idx = slope_array.index(slope_type)
+        new_slope_array = swap_slope(slope_array, FLIP_XY)
+
         new_slope_type = new_slope_array[idx]
 
     elif (49 <= slope_type <= 52):
         
-        slope_array = [49, 52, 51, 50]
+        #slope_array = [49, 52, 51, 50]
+        if flip_code == FLIP_X:
+            slope_array = [49, 50, 51, 52]
+        elif flip_code == FLIP_Y:
+            slope_array = [49, 51, 50, 52]
+        elif flip_code == FLIP_XY:
+            slope_array = [49, 50, 51, 52]  # TODO: flip XY
+            pass
+
         idx = slope_array.index(slope_type)
-        pass
-        if (rotation_angle == 90):
-            new_slope_array = rotate_slope_90(slope_array)
-        elif (rotation_angle == 180):
-            new_slope_array = rotate_slope_180(slope_array)
-        elif (rotation_angle == 270):
-            new_slope_array = rotate_slope_270(slope_array)
+        new_slope_array = swap_slope(slope_array, FLIP_XY)
         
         new_slope_type = new_slope_array[idx]
 
     elif (53 <= slope_type <= 56):
 
-        slope_array = [53, 54, 56, 55]
+        slope_array = [55, 56, 53, 54]
         idx = slope_array.index(slope_type)
 
-        if (rotation_angle == 90):
-            new_slope_array = rotate_slope_90(slope_array)
-        elif (rotation_angle == 180):
-            new_slope_array = rotate_slope_180(slope_array)
-        elif (rotation_angle == 270):
-            new_slope_array = rotate_slope_270(slope_array)
+        new_slope_array = swap_slope(slope_array, flip_code)
         
         new_slope_type = new_slope_array[idx]
 
     elif (57 <= slope_type <= 60):
 
-        slope_array = [57, 59, 60, 58]
-        idx = slope_array.index(slope_type)
-
-        if (rotation_angle == 90):
-            new_slope_array = rotate_slope_90(slope_array)
-        elif (rotation_angle == 180):
-            new_slope_array = rotate_slope_180(slope_array)
-        elif (rotation_angle == 270):
-            new_slope_array = rotate_slope_270(slope_array)
+        if flip_code == FLIP_X:
+            slope_array = [57, 58, 59, 60]
+        elif flip_code == FLIP_Y:
+            slope_array = [58, 59, 57, 60]
+        elif flip_code == FLIP_XY:
+            slope_array = [57, 58, 59, 60]  # TODO: flip XY
+            pass
         
+        idx = slope_array.index(slope_type)
+        new_slope_array = swap_slope(slope_array, FLIP_XY)
+
         new_slope_type = new_slope_array[idx]
     
     if (new_slope_type != None):
@@ -781,8 +848,8 @@ def rotate_slope(block_data, rotation_angle):
     return new_block_data
 
 
-def rotate_info(block_info_array, rotation_angle):
-    """Rotate tiles, slopes, road arrows, rotate tile rotations etc."""
+def flip_info(block_info_array, flip_code):
+    """Flip tiles, slopes, road arrows, rotate tile rotations etc."""
     for z in range(len(block_info_array)):
         for y in range(len(block_info_array[z])):
             for x in range(len(block_info_array[z][y])):
@@ -794,22 +861,22 @@ def rotate_info(block_info_array, rotation_angle):
                 
                 # some field blocks can have arrows, which is the case of train railroads
                 if (is_road_field_block(old_block_data)):
-                    new_block_data = rotate_road_arrows(old_block_data, rotation_angle)
+                    new_block_data = flip_road_arrows(old_block_data, flip_code)
                 else:
                     new_block_data = old_block_data
                 
                 if block_has_lid(new_block_data):
-                    new_block_data = rotate_lid(new_block_data, rotation_angle)
-                new_block_data = rotate_sides(new_block_data, rotation_angle)
+                    new_block_data = flip_lid(new_block_data, flip_code)
+                new_block_data = flip_sides(new_block_data, flip_code)
 
                 if is_slope(new_block_data):
-                    new_block_data = rotate_slope(new_block_data, rotation_angle)
+                    new_block_data = flip_slope(new_block_data, flip_code)
 
                 block_info_array[z][y][x] = new_block_data
 
     return
 
-def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
+def flip_map(output_path, chunk_infos, flip_code, block_info_array):
     with open(output_path, 'r+b') as file:
         
         umap_offset = chunk_infos["UMAP"][0]
@@ -823,7 +890,7 @@ def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
         y = 0
         z = 0
 
-        if (rotation_angle == 180):
+        if (flip_code == FLIP_XY):
 
             while (current_offset < umap_offset + size):
                 file.write(block_info_array[z][MAP_HEIGHT - y][MAP_WIDTH - x])
@@ -841,10 +908,10 @@ def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
                 if (z >= 8):
                     break
         
-        elif (rotation_angle == 90):
+        elif (flip_code == FLIP_X):
 
             while (current_offset < umap_offset + size):
-                file.write(block_info_array[z][MAP_HEIGHT - x][y])
+                file.write(block_info_array[z][y][MAP_WIDTH - x])
                 
                 x += 1
 
@@ -859,10 +926,10 @@ def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
                 if (z >= 8):
                     break
 
-        elif (rotation_angle == 270):
+        elif (flip_code == FLIP_Y):
 
             while (current_offset < umap_offset + size):
-                file.write(block_info_array[z][x][MAP_HEIGHT - y])
+                file.write(block_info_array[z][MAP_HEIGHT - y][x])
                 
                 x += 1
 
@@ -877,7 +944,7 @@ def rotate_map(output_path, chunk_infos, rotation_angle, block_info_array):
                 if (z >= 8):
                     break
 
-    #print(f"Map blocks rotated successfully by {rotation_angle}°")
+    #print(f"Map blocks flipped successfully")
 
 def get_zones_info_data(gmp_path, chunk_infos):
 
@@ -929,27 +996,27 @@ def get_light_info_data(gmp_path, chunk_infos):
 
     return lights_data
 
-def rotate_gmp_blocks(output_path, chunk_infos, rotation_angle, block_info_array):
-    """Rotate the UMAP info"""
+def flip_gmp_blocks(output_path, chunk_infos, flip_code, block_info_array):
+    """Flip the UMAP info"""
 
-    print("Rotating block info...")
-    rotate_info(block_info_array, rotation_angle)   # rotate tiles, slopes etc.
+    print("Flipping block info...")
+    flip_info(block_info_array, flip_code)   # flip tiles, slopes etc.
 
-    print("Rotating UMAP info...")
-    rotate_map(output_path, chunk_infos, rotation_angle, block_info_array)  # Now rotate the map itself
+    print("Flipping UMAP info...")
+    flip_map(output_path, chunk_infos, flip_code, block_info_array)  # Now flip the map itself
     return
 
-def rotate_light_coordinates(light_data, rotation_angle):
+def flip_light_coordinates(light_data, flip_code):
     light_x = int.from_bytes(light_data[4:6], 'little')   # word
     light_y = int.from_bytes(light_data[6:8], 'little')   # word
 
-    if (rotation_angle == 180):
+    if (flip_code == FLIP_XY):
         light_x = LIGHT_MAX_X - light_x
         light_y = LIGHT_MAX_Y - light_y
-    elif (rotation_angle == 90):
-        light_x, light_y = LIGHT_MAX_Y - light_y , light_x
-    elif (rotation_angle == 270):
-        light_x, light_y = light_y , LIGHT_MAX_X - light_x
+    elif (flip_code == FLIP_X):
+        light_x = LIGHT_MAX_X - light_x
+    elif (flip_code == FLIP_Y):
+        light_y = LIGHT_MAX_Y - light_y
 
     if (light_x > LIGHT_MAX_X or light_y > LIGHT_MAX_Y):
         print(f"Error: light coordinate overflow: x = {light_x}, y = {light_y}")
@@ -965,28 +1032,19 @@ def rotate_light_coordinates(light_data, rotation_angle):
 
     return new_light_data
 
-def rotate_zone_coordinates(zone_data, rotation_angle):
+def flip_zone_coordinates(zone_data, flip_code):
     zone_x = zone_data[1]
     zone_y = zone_data[2]
     zone_w = zone_data[3]
     zone_h = zone_data[4]
 
-    # TODO: test
-    #zone_type = zone_data[0]
-    #if zone_type == 14: # ignore gang zones
-    #    return zone_data
-
-    if (rotation_angle == 180):
+    if (flip_code == FLIP_XY):
         zone_x = MAP_WIDTH - zone_x - zone_w + 1
         zone_y = MAP_HEIGHT - zone_y - zone_h + 1
-    elif (rotation_angle == 90):
-        zone_x, zone_y = MAP_HEIGHT - zone_y - zone_h + 1, zone_x
-        zone_w, zone_h = zone_h, zone_w
-        pass
-    elif (rotation_angle == 270):
-        zone_x, zone_y = zone_y, MAP_WIDTH - zone_x - zone_w + 1
-        zone_w, zone_h = zone_h, zone_w
-        pass
+    elif (flip_code == FLIP_X):
+        zone_x = MAP_WIDTH - zone_x - zone_w + 1
+    elif (flip_code == FLIP_Y):
+        zone_y = MAP_HEIGHT - zone_y - zone_h + 1
 
     if (zone_x < 0 or zone_y < 0):
         print(f"Error: negative zone coordinates: x = {zone_x}, y = {zone_y}")
@@ -1007,26 +1065,26 @@ def rotate_zone_coordinates(zone_data, rotation_angle):
 
     return new_zone_data
 
-def rotate_light_info(light_info_array, rotation_angle):
+def flip_light_info(light_info_array, flip_code):
     for i in range(len(light_info_array)):
         old_light_data = light_info_array[i]
-        new_light_data = rotate_light_coordinates(old_light_data, rotation_angle)
+        new_light_data = flip_light_coordinates(old_light_data, flip_code)
         light_info_array[i] = new_light_data
     return
 
-def rotate_zone_info(zones_info_array, rotation_angle):
+def flip_zone_info(zones_info_array, rotation_angle):
     for i in range(len(zones_info_array)):
         old_zone_data = zones_info_array[i]
-        new_zone_data = rotate_zone_coordinates(old_zone_data, rotation_angle)
+        new_zone_data = flip_zone_coordinates(old_zone_data, rotation_angle)
         zones_info_array[i] = new_zone_data
     return
 
-def rotate_gmp_zones(output_path, chunk_infos, rotation_angle, zones_info_array):
+def flip_gmp_zones(output_path, chunk_infos, rotation_angle, zones_info_array):
     if chunk_infos["ZONE"][0] is None:
         return  # no zones
     
     print("Rotating zones coordinates...")
-    rotate_zone_info(zones_info_array, rotation_angle)
+    flip_zone_info(zones_info_array, rotation_angle)
     
     with open(output_path, 'r+b') as file:
         zone_offset = chunk_infos["ZONE"][0]
@@ -1046,13 +1104,13 @@ def rotate_gmp_zones(output_path, chunk_infos, rotation_angle, zones_info_array)
 
     return
 
-def rotate_gmp_lights(output_path, chunk_infos, rotation_angle, light_info_array):
+def flip_gmp_lights(output_path, chunk_infos, flip_code, light_info_array):
 
     if chunk_infos["LGHT"][0] is None:
         return  # no lights
     
     print("Rotating lights coordinates...")
-    rotate_light_info(light_info_array, rotation_angle)
+    flip_light_info(light_info_array, flip_code)
     
     with open(output_path, 'r+b') as file:
         lght_offset = chunk_infos["LGHT"][0]
@@ -1072,41 +1130,49 @@ def rotate_gmp_lights(output_path, chunk_infos, rotation_angle, light_info_array
 
     return
 
+def get_flip(flip_x, flip_y):
+    if not flip_x and not flip_y:
+        return NO_FLIP
+    if flip_x and not flip_y:
+        return FLIP_X
+    if not flip_x and flip_y:
+        return FLIP_Y
+    return FLIP_XY
 
-def rotate_gmp(gmp_path, chunk_infos, rotation_angle, out_path):
+def flip_gmp(gmp_path, chunk_infos, flip_code, out_path):
 
     if chunk_infos["UMAP"][0] is None:
-        print("Error: This GMP rotator only support uncompressed maps.")
+        print("Error: This GMP flipper only support uncompressed maps.")
         return -2
-        #sys.exit(-1)
+
+    if flip_code == FLIP_X:
+        flip_type = "x"
+    elif flip_code == FLIP_Y:
+        flip_type = "y"
+    else:
+        flip_type = "xy"
 
     # create a copy of gmp file
-    str_gmp_path = str(gmp_path)
-    i = str_gmp_path.rfind('\\') + 1
-    j = str_gmp_path.rfind('.')
-
-    filename = str_gmp_path[i:j]
-    #output_path = ROOT_DIR / f"{filename}_rotated.gmp"
-    output_path = out_path / f"{filename}_rotated_{rotation_angle}.gmp"
+    filename = get_filename(gmp_path)
+    #output_path = ROOT_DIR / f"{filename}_flipped_{flip_type}.gmp"
+    output_path = out_path / f"{filename}_flip_{flip_type}.gmp"
 
     print(f"Creating copy of {filename}.gmp")
     shutil.copyfile(gmp_path, output_path)
-
-    if rotation_angle == 0:
-        print("Rotation angle = 0. Finished!")
-        return
 
     # get block infos
     block_info_array = get_block_info_data(gmp_path, chunk_infos)
     zones_info_array = get_zones_info_data(gmp_path, chunk_infos)
     light_info_array = get_light_info_data(gmp_path, chunk_infos)
 
-    # rotate map
-    rotate_gmp_blocks(output_path, chunk_infos, rotation_angle, block_info_array)
-    rotate_gmp_zones(output_path, chunk_infos, rotation_angle, zones_info_array)
-    rotate_gmp_lights(output_path, chunk_infos, rotation_angle, light_info_array)
+    
 
-    print(f"\nSuccess! GMP rotated by {rotation_angle}° clockwise.")
+    # flip map
+    flip_gmp_blocks(output_path, chunk_infos, flip_code, block_info_array)
+    flip_gmp_zones(output_path, chunk_infos, flip_code, zones_info_array)
+    flip_gmp_lights(output_path, chunk_infos, flip_code, light_info_array)
+
+    print(f"\nSuccess! GMP flipped!")
 
     # TODO:  only ste.gmp use MOBJ header, but it can't be decompressed without corrupting gmp
     #rotate_gmp_objects(output_path, chunk_infos, rotation_angle, obj_info_array)
@@ -1117,13 +1183,13 @@ def rotate_gmp(gmp_path, chunk_infos, rotation_angle, out_path):
 def main():
     parser = argparse.ArgumentParser(PROGRAM_NAME)
     parser.add_argument("gmp_path")
-    parser.add_argument("rot_angle")
+    parser.add_argument("-x", "--flip_x", action='store_true')
+    parser.add_argument("-y", "--flip_y", action='store_true')
     args = parser.parse_args()
 
     if (not args.gmp_path 
-        or not args.rot_angle.isdigit() 
-        or not int(args.rot_angle) in ROTATION_ANGLES ):
-        print("Usage: python [program path] [gmp path] [rotation = 0,90,180,270]")
+        or (not args.flip_x and not args.flip_y ) ):
+        print("Usage: python [program path] [gmp path] [-x | --flip_x] [-y | --flip_y]")
         sys.exit(-1)
 
     if ("\\" not in args.gmp_path and "/" not in args.gmp_path):
@@ -1131,16 +1197,13 @@ def main():
     else:
         gmp_path = Path(args.gmp_path)
 
-    rotation_angle = int(args.rot_angle)
-
     if (not gmp_path.exists()):
         print("File not found.")
         sys.exit(-1)
-
-    out_path = gmp_path.parent
     
     chunk_infos = detect_headers_and_get_chunks(gmp_path)
-    rotate_gmp(gmp_path, chunk_infos, rotation_angle, out_path)
+    flip_code = get_flip(args.flip_x, args.flip_y)  # 0 = No flip, 1 = Flip x, 2 = Flip y, 3 = Flip x & y
+    flip_gmp(gmp_path, chunk_infos, flip_code, ROOT_DIR)
         
     return
 

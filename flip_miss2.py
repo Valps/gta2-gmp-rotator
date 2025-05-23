@@ -3,12 +3,17 @@ import shutil
 import argparse
 import sys
 import os
-import rotate_cmd
+import flip_cmd
 
 PROGRAM_NAME = os.path.basename(sys.argv[0])
 ROOT_DIR = Path(__file__).parent
 
 ROTATION_ANGLES = [0, 90, 180, 270]
+
+NO_FLIP = 0
+FLIP_X = 1
+FLIP_Y = 2
+FLIP_XY = 3
 
 def get_filename(path):
     str_path = str(path)
@@ -56,59 +61,23 @@ def read_and_get_statistical(miss2_path) -> tuple[dict,dict,dict]:
     with open(miss2_path, 'r') as file:
 
         for line in file:
-            for opcode in rotate_cmd.DEC_OPCODES_LIST:
+            for opcode in flip_cmd.DEC_OPCODES_LIST:
                 if opcode in line:
                     add_item_dict(dec_opcodes_dict, opcode, 1)
                     break
-            for opcode in rotate_cmd.EXEC_OPCODES_LIST:
+            for opcode in flip_cmd.EXEC_OPCODES_LIST:
                 if opcode in line:
                     add_item_dict(exec_opcodes_dict, opcode, 1)
                     break
-            for opcode in rotate_cmd.BOOL_OPCODES_LIST:
+            for opcode in flip_cmd.BOOL_OPCODES_LIST:
                 if opcode in line:
                     #print(opcode)
                     add_item_dict(bool_opcodes_dict, opcode, line.count(opcode))
 
     return dec_opcodes_dict, exec_opcodes_dict, bool_opcodes_dict
 
-def read_and_rotate_lines(miss2_path, rotation_ang):
 
-    lines_array = []
-    lines_index = []
-
-    print(f"\nFile {get_filename(miss2_path)}.mis: \n")
-
-    with open(miss2_path, 'r') as file:
-
-        line_num = 0
-
-        for line in file:
-
-            get_line = False
-
-            if (line.strip().startswith("//")):
-                continue
-            
-            #if (has_coordinates(line)):
-                #new_line = change_coord(line, rotation_ang)
-            #    get_line = True
-            #else:
-            #    new_line = line
-
-            #if (has_rotation_param(line)):
-            #    new_line = change_rot_param(new_line, rotation_ang)
-            #    get_line = True
-
-            #if (get_line == True):  # ignore unchanged lines
-            #    lines_array.append(new_line)
-            #    lines_index.append(line_num)
-
-            line_num += 1
-    
-    return ( lines_array, lines_index )
-
-
-def rotate_script_info(miss2_path, rotation_ang, output_path):
+def flip_script_info(miss2_path, flip_code, output_path):
 
     print(f"\nOpening file {get_filename(miss2_path)}.mis: \n")
 
@@ -124,12 +93,12 @@ def rotate_script_info(miss2_path, rotation_ang, output_path):
 
                 tabs_whitespaces = get_whitespaces(line)
                 
-                if rotate_cmd.is_dec_opcode_rotatable(line):
-                    new_line = rotate_cmd.rotate_dec_opcode(line, rotation_ang)
-                elif rotate_cmd.is_exec_opcode_rotatable(line):
-                    new_line = rotate_cmd.rotate_exec_opcode(line, rotation_ang)
-                elif rotate_cmd.is_bool_opcode_rotatable(line):
-                    new_line = rotate_cmd.rotate_bool_line(line, rotation_ang)
+                if flip_cmd.is_dec_opcode_flippable(line):
+                    new_line = flip_cmd.flip_dec_opcode(line, flip_code)
+                elif flip_cmd.is_exec_opcode_flippable(line):
+                    new_line = flip_cmd.flip_exec_opcode(line, flip_code)
+                elif flip_cmd.is_bool_opcode_flippable(line):
+                    new_line = flip_cmd.flip_bool_line(line, flip_code)
                 else:
                     if comment is not None:
                         line += " // " + comment
@@ -142,12 +111,21 @@ def rotate_script_info(miss2_path, rotation_ang, output_path):
                 new_line = tabs_whitespaces + new_line + "\n"
                 output_file.write(new_line)
 
-def main_rotate_miss(miss2_path, rotation_angle):
-    
+def get_flip(flip_x, flip_y):
+    if not flip_x and not flip_y:
+        return NO_FLIP
+    if flip_x and not flip_y:
+        return FLIP_X
+    if not flip_x and flip_y:
+        return FLIP_Y
+    return FLIP_XY
+
+def main_flip_miss(miss2_path, flip_code):
     filename = get_filename(miss2_path)
 
     # create output folder, if it not exists
-    output_folder = miss2_path.parent / (filename + f"_rotated_{rotation_angle}")
+    flip_type = "x" if flip_code == FLIP_X else "y"
+    output_folder = miss2_path.parent / (filename + f"_flip_{flip_type}")
     if (not output_folder.exists()):
         output_folder.mkdir()
 
@@ -157,7 +135,7 @@ def main_rotate_miss(miss2_path, rotation_angle):
     # TODO shutil.copy(miss2_path, output_path)
     
     # rotate script info
-    rotate_script_info(miss2_path, rotation_angle, output_path)
+    flip_script_info(miss2_path, flip_code, output_path)
 
     # get statistic data
     dec_dict, exec_dict, bool_dict = read_and_get_statistical(miss2_path)
@@ -185,7 +163,7 @@ def main_rotate_miss(miss2_path, rotation_angle):
                 output_path = missions_output_folder / (filename + ".mis")
                 #shutil.copy(mission_path, output_path)
                 
-                rotate_script_info(mission_path, rotation_angle, output_path)
+                flip_script_info(mission_path, flip_code, output_path)
 
                 # get statistic data
                 miss_dec_dict, miss_exec_dict, miss_bool_dict = read_and_get_statistical(mission_path)
@@ -233,12 +211,11 @@ def main_rotate_miss(miss2_path, rotation_angle):
 def main():
     parser = argparse.ArgumentParser(PROGRAM_NAME)
     parser.add_argument("miss2_path")
-    parser.add_argument("rot_angle")
+    parser.add_argument("-x", "--flip_x", action='store_true')
+    parser.add_argument("-y", "--flip_y", action='store_true')
     args = parser.parse_args()
 
-    if (not args.miss2_path 
-        or not args.rot_angle.isdigit() 
-        or not int(args.rot_angle) in ROTATION_ANGLES ):
+    if not args.miss2_path:
         print("Usage: python [program path] [miss2 path] [rotation = 0,90,180,270]")
         sys.exit(-1)
 
@@ -247,7 +224,12 @@ def main():
     else:
         miss2_path = Path(args.miss2_path)
 
-    rotation_angle = int(args.rot_angle)
+    #rotation_angle = int(args.rot_angle)
+    flip_code = get_flip(args.flip_x, args.flip_y)    # 0 = No flip, 1 = Flip x, 2 = Flip y, 3 = Flip x & y
+
+    if flip_code == FLIP_XY:
+        print("ERROR: XY flip not supported yet. Rotate 180° instead.")
+        sys.exit(-1)
 
     if (not miss2_path.exists()):
         print("File not found.")
@@ -257,7 +239,8 @@ def main():
         print(f"The file {miss2_path} isn't a miss2 script file")
         sys.exit(-1)
 
-    main_rotate_miss(miss2_path, rotation_angle)
+    main_flip_miss(miss2_path, flip_code)
+    return
 
 
 if __name__ == "__main__":

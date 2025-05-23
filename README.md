@@ -1,11 +1,9 @@
 # gta2-gmp-rotator
-Rotate an uncompressed GTA2 map by 90°, 180° or 270° clockwise.
-
-In the future, after understanding how maps are compressed and uncompressed, I can make it rotate compressed maps.
+Rotate an uncompressed GTA2 map by 90°, 180° or 270° clockwise. Also, it can flip/mirror a map vertically or horizontally.
 
 Thread on GTAMP forum: https://gtamp.com/forum/viewtopic.php?t=1403
 
-##  How to use
+##  How to use (python users)
 
 - Requires python 3.X.X
 - Requires an uncompressed gmp map
